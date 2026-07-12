@@ -374,3 +374,12 @@ Review-cluster fixes applied to `capabilities.ts`/`opfs-probe.ts` and their test
   Unsupported screen? If that is ever decided yes, reintroduce a per-capability required/optional
   distinction then and let the UI surface the degraded state. Left as a product call;
   all-or-nothing behavior unchanged throughout.
+- **WebGPU compatibility-mode fallback (Phase 3 question, field evidence 2026-07-12).** Stock
+  Chrome on desktop Linux can ship with Vulkan disabled, in which case no *core* WebGPU adapter
+  exists and the gate fails, while a GLES-backed *compatibility-mode* adapter is available
+  (observed on the user's machine; fixed by chrome://flags/#enable-vulkan — see
+  `docs/runbooks/linux-chrome-webgpu.md`). The probe now detects this case and points at the
+  flag. Open question for Phase 3, once the pipeline's real device needs are pinned: accept a
+  compatibility adapter as a fallback? The pipeline is compute-only, which largely works under
+  compat mode, and it would widen desktop-Linux support without the flag — but compat mode
+  carries feature/limit restrictions, so it's a deliberate decision, not a default.

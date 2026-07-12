@@ -25,12 +25,24 @@ export interface GpuAdapterLike {
 }
 
 export interface GpuLike {
-  requestAdapter(): Promise<GpuAdapterLike | null>
+  requestAdapter(options?: { featureLevel?: string }): Promise<GpuAdapterLike | null>
 }
 
 function defaultGpu(): GpuLike | undefined {
   const global = globalThis as { navigator?: { gpu?: GpuLike } }
   return global.navigator?.gpu
+}
+
+// The pipeline needs a core adapter; a compatibility-mode (GLES) adapter is
+// probed only to sharpen the failure message: core-null with compat-present is
+// the signature of Chrome on Linux with Vulkan disabled (see
+// docs/runbooks/linux-chrome-webgpu.md).
+async function hasCompatibilityAdapter(gpu: GpuLike): Promise<boolean> {
+  try {
+    return (await gpu.requestAdapter({ featureLevel: 'compatibility' })) !== null
+  } catch {
+    return false
+  }
 }
 
 export async function probeWebGpu(gpu: GpuLike | undefined = defaultGpu()): Promise<ProbeOutcome> {
@@ -39,7 +51,15 @@ export async function probeWebGpu(gpu: GpuLike | undefined = defaultGpu()): Prom
   }
   const adapter = await gpu.requestAdapter()
   if (!adapter) {
-    return { ok: false, detail: 'requestAdapter() returned no adapter' }
+    return (await hasCompatibilityAdapter(gpu))
+      ? {
+          ok: false,
+          detail:
+            'no core WebGPU adapter, but a compatibility adapter exists — ' +
+            'on Chrome for Linux this usually means Vulkan is disabled; ' +
+            'enable chrome://flags/#enable-vulkan and relaunch',
+        }
+      : { ok: false, detail: 'requestAdapter() returned no adapter' }
   }
   // Requests default limits for now; Phase 3 revisits requested limits once
   // the detection pipeline's actual needs (buffer sizes, workgroup limits) are known.

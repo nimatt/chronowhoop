@@ -112,8 +112,36 @@ describe('probeWebGpu', () => {
     })
   })
 
-  it('fails when no adapter is returned', async () => {
+  it('fails plainly when neither a core nor a compatibility adapter exists', async () => {
     const gpu: GpuLike = { requestAdapter: async () => null }
+    expect(await probeWebGpu(gpu)).toEqual({
+      ok: false,
+      detail: 'requestAdapter() returned no adapter',
+    })
+  })
+
+  it('points at the Vulkan flag when only a compatibility adapter exists', async () => {
+    const gpu: GpuLike = {
+      requestAdapter: async (options) =>
+        options?.featureLevel === 'compatibility'
+          ? { requestDevice: async () => ({ destroy: () => {} }) }
+          : null,
+    }
+    const outcome = await probeWebGpu(gpu)
+    expect(outcome.ok).toBe(false)
+    if (!outcome.ok) {
+      expect(outcome.detail).toContain('compatibility adapter exists')
+      expect(outcome.detail).toContain('chrome://flags/#enable-vulkan')
+    }
+  })
+
+  it('fails plainly when the compatibility-adapter check itself throws', async () => {
+    const gpu: GpuLike = {
+      requestAdapter: async (options) => {
+        if (options?.featureLevel === 'compatibility') throw new TypeError('unknown featureLevel')
+        return null
+      },
+    }
     expect(await probeWebGpu(gpu)).toEqual({
       ok: false,
       detail: 'requestAdapter() returned no adapter',
