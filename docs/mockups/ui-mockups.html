@@ -1,0 +1,811 @@
+<title>ChronoWhoop UI mockups</title>
+
+<style>
+  /* ============ Design tokens ============ */
+  :root {
+    /* Gallery shell — themed (light default) */
+    --pg-bg: #ebeeea;
+    --pg-bg-2: #f6f7f4;
+    --pg-ink: #14181d;
+    --pg-dim: #59626c;
+    --pg-line: #d5dad4;
+    --pg-accent: #0d8f83;      /* teal, darkened for light */
+    --pg-warm: #b0730a;        /* amber, darkened for light */
+
+    /* Phone-internal palette — fixed dark in both themes */
+    --c-ground: #0a0e13;
+    --c-panel:  #131922;
+    --c-panel2: #1b2431;
+    --c-line:   #27313f;
+    --c-ink:    #eaeef4;
+    --c-dim:    #808b99;
+    --c-dim2:   #59636f;
+    --c-signal: #33decf;       /* live sensor data */
+    --c-signal-dim: #185f5a;
+    --c-record: #ffb84d;       /* records / bests */
+    --c-record-dim: #6f5227;
+    --c-danger: #ff5265;
+
+    --font-mono: ui-monospace, "SF Mono", SFMono-Regular, "Cascadia Mono", "Segoe UI Mono", Menlo, Consolas, "Liberation Mono", monospace;
+    --font-sans: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+
+    --pw: 390px;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --pg-bg: #06090c;
+      --pg-bg-2: #0c1116;
+      --pg-ink: #e7ecf2;
+      --pg-dim: #838c99;
+      --pg-line: #1c2430;
+      --pg-accent: #33decf;
+      --pg-warm: #ffb84d;
+    }
+  }
+  :root[data-theme="light"] {
+    --pg-bg: #ebeeea; --pg-bg-2: #f6f7f4; --pg-ink: #14181d; --pg-dim: #59626c;
+    --pg-line: #d5dad4; --pg-accent: #0d8f83; --pg-warm: #b0730a;
+  }
+  :root[data-theme="dark"] {
+    --pg-bg: #06090c; --pg-bg-2: #0c1116; --pg-ink: #e7ecf2; --pg-dim: #838c99;
+    --pg-line: #1c2430; --pg-accent: #33decf; --pg-warm: #ffb84d;
+  }
+
+  /* ============ Page shell ============ */
+  * { box-sizing: border-box; }
+  body { margin: 0; }
+  .page {
+    background: var(--pg-bg);
+    color: var(--pg-ink);
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+    min-height: 100vh;
+    padding: clamp(20px, 4vw, 56px) clamp(16px, 4vw, 48px) 72px;
+  }
+  .masthead { max-width: 1220px; margin: 0 auto 8px; }
+  .brandrow { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+  .mark {
+    width: 46px; height: 46px; flex: none;
+    display: grid; place-items: center;
+    border: 1.5px solid var(--pg-accent); border-radius: 12px;
+    color: var(--pg-accent);
+  }
+  .wordmark {
+    font-family: var(--font-mono); font-weight: 600;
+    font-size: clamp(1.6rem, 3.6vw, 2.4rem);
+    letter-spacing: 0.14em; text-transform: uppercase;
+    margin: 0; line-height: 1;
+  }
+  .wordmark b { color: var(--pg-accent); font-weight: 600; }
+  .tagline {
+    margin: 18px 0 0; max-width: 62ch;
+    font-size: clamp(1rem, 1.6vw, 1.12rem); line-height: 1.55; color: var(--pg-dim);
+  }
+  .tagline strong { color: var(--pg-ink); font-weight: 600; }
+
+  /* signature strip: a mini motion-energy meter as brand motif */
+  .sigbars { display: flex; align-items: flex-end; gap: 4px; height: 44px; margin-left: auto; }
+  .sigbars i {
+    width: 8px; border-radius: 3px 3px 1px 1px; display: block;
+    background: var(--pg-accent); opacity: .32;
+  }
+  .sigbars i.hot { opacity: 1; }
+  @media (max-width: 620px) { .sigbars { display: none; } }
+
+  .legend {
+    max-width: 1220px; margin: 26px auto 0; padding: 14px 18px;
+    border: 1px solid var(--pg-line); border-radius: 14px; background: var(--pg-bg-2);
+    display: flex; flex-wrap: wrap; gap: 10px 26px; align-items: center;
+    font-size: .85rem; color: var(--pg-dim);
+  }
+  .legend .lg { display: inline-flex; align-items: center; gap: 8px; }
+  .legend .sw { width: 13px; height: 13px; border-radius: 4px; flex: none; }
+  .legend b { color: var(--pg-ink); font-weight: 600; }
+
+  /* ============ Gallery ============ */
+  .gallery {
+    max-width: 1220px; margin: 40px auto 0;
+    display: grid; gap: clamp(30px, 4vw, 52px) clamp(24px, 3vw, 44px);
+    grid-template-columns: repeat(auto-fit, minmax(340px, 1fr));
+    justify-items: center;
+  }
+  .item { width: 100%; max-width: 440px; display: flex; flex-direction: column; gap: 18px; }
+  .caption { padding: 0 4px; }
+  .eyebrow {
+    font-family: var(--font-mono); font-size: .72rem; letter-spacing: .18em;
+    text-transform: uppercase; color: var(--pg-accent); margin: 0 0 6px;
+    display: flex; align-items: baseline; gap: 8px;
+  }
+  .eyebrow .num { color: var(--pg-dim); }
+  .caption h3 { margin: 0 0 6px; font-size: 1.06rem; letter-spacing: -0.01em; }
+  .caption p { margin: 0; font-size: .9rem; line-height: 1.5; color: var(--pg-dim); }
+  .caption p b { color: var(--pg-ink); font-weight: 600; }
+
+  /* ============ Phone frame ============ */
+  .phone {
+    width: min(var(--pw), 100%);
+    margin: 0 auto;
+    background: #04060a;
+    border: 1px solid #222b36;
+    border-radius: 44px;
+    padding: 10px;
+    box-shadow: 0 30px 60px -30px rgba(0,0,0,.7), 0 0 0 1px rgba(255,255,255,.02) inset;
+  }
+  .screen {
+    position: relative;
+    background: var(--c-ground);
+    border-radius: 34px;
+    height: 772px;
+    overflow: hidden;
+    color: var(--c-ink);
+    font-family: var(--font-sans);
+    display: flex; flex-direction: column;
+  }
+  .statusbar {
+    height: 36px; flex: none; padding: 0 26px;
+    display: flex; align-items: center; justify-content: space-between;
+    font-family: var(--font-mono); font-size: .78rem; letter-spacing: .02em;
+    color: var(--c-ink);
+  }
+  .statusbar .sysicons { display: flex; align-items: center; gap: 6px; color: var(--c-dim); }
+  .statusbar .batt { width: 20px; height: 11px; border: 1.3px solid var(--c-dim); border-radius: 3px; position: relative; }
+  .statusbar .batt::after { content:""; position:absolute; left:1.5px; top:1.5px; bottom:1.5px; width: 11px; background: var(--c-signal); border-radius: 1px; }
+  .statusbar .batt::before { content:""; position:absolute; right:-3px; top:3px; bottom:3px; width:2px; background: var(--c-dim); border-radius: 0 1px 1px 0; }
+
+  .body { flex: 1 1 auto; min-height: 0; padding: 6px 18px 20px; display: flex; flex-direction: column; gap: 14px; }
+
+  /* app bar */
+  .appbar { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 6px 2px 2px; }
+  .appbar .title { display: flex; align-items: center; gap: 10px; min-width: 0; }
+  .appbar .title h1 { margin: 0; font-size: 1.18rem; letter-spacing: -0.01em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .appbar .title .sub { font-family: var(--font-mono); font-size: .66rem; letter-spacing: .16em; text-transform: uppercase; color: var(--c-signal); }
+  .actions { display: flex; gap: 8px; flex: none; }
+
+  .iconbtn {
+    width: 34px; height: 34px; flex: none; border-radius: 10px;
+    display: grid; place-items: center;
+    background: var(--c-panel); border: 1px solid var(--c-line); color: var(--c-dim);
+  }
+  .iconbtn.accent { color: var(--c-signal); border-color: var(--c-signal-dim); }
+  .backbtn { width: 34px; height: 34px; border-radius: 10px; display: grid; place-items:center; background: var(--c-panel); border: 1px solid var(--c-line); color: var(--c-ink); flex:none; }
+
+  svg { display: block; }
+  .ic { width: 19px; height: 19px; stroke: currentColor; stroke-width: 1.7; fill: none; stroke-linecap: round; stroke-linejoin: round; }
+  .ic-sm { width: 15px; height: 15px; stroke: currentColor; stroke-width: 1.8; fill: none; stroke-linecap: round; stroke-linejoin: round; }
+
+  /* chips */
+  .chip {
+    display: inline-flex; align-items: center; gap: 6px;
+    font-family: var(--font-mono); font-size: .68rem; letter-spacing: .04em;
+    padding: 5px 9px; border-radius: 999px; border: 1px solid var(--c-line);
+    color: var(--c-dim); background: var(--c-panel);
+  }
+  .chip.ok { color: var(--c-signal); border-color: var(--c-signal-dim); background: rgba(51,222,207,.07); }
+  .chip.warm { color: var(--c-record); border-color: var(--c-record-dim); background: rgba(255,184,77,.07); }
+
+  /* cards */
+  .card { background: var(--c-panel); border: 1px solid var(--c-line); border-radius: 16px; padding: 14px; }
+  .stack { display: flex; flex-direction: column; gap: 12px; }
+  .list { display: flex; flex-direction: column; gap: 10px; overflow: hidden; }
+  .scrollhint { position: relative; }
+
+  .label { font-family: var(--font-mono); font-size: .64rem; letter-spacing: .16em; text-transform: uppercase; color: var(--c-dim2); }
+  .mono { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+
+  /* course card */
+  .course { display: flex; flex-direction: column; gap: 12px; }
+  .course .top { display: flex; justify-content: space-between; align-items: flex-start; gap: 10px; }
+  .course .cname { font-size: 1.04rem; font-weight: 600; letter-spacing: -0.01em; }
+  .course .meta { font-family: var(--font-mono); font-size: .68rem; color: var(--c-dim); margin-top: 3px; }
+  .recs { display: flex; gap: 10px; }
+  .rec { flex: 1; background: var(--c-ground); border: 1px solid var(--c-line); border-radius: 11px; padding: 9px 11px; }
+  .rec .k { font-family: var(--font-mono); font-size: .58rem; letter-spacing: .14em; text-transform: uppercase; color: var(--c-dim2); }
+  .rec .v { font-family: var(--font-mono); font-variant-numeric: tabular-nums; font-size: 1.34rem; color: var(--c-record); font-weight: 600; margin-top: 3px; line-height: 1; }
+  .rec .v small { font-size: .7rem; color: var(--c-dim); font-weight: 400; margin-left: 2px; }
+  .rec.b3 .v { color: var(--c-ink); }
+
+  /* buttons */
+  .btn { display: flex; align-items: center; justify-content: center; gap: 9px; width: 100%; border-radius: 14px; padding: 15px; font-family: var(--font-sans); font-size: 1rem; font-weight: 600; border: 1px solid transparent; letter-spacing: .01em; }
+  .btn-primary { background: var(--c-signal); color: #04120f; }
+  .btn-warm { background: var(--c-record); color: #1a1204; }
+  .btn-ghost { background: var(--c-panel); border-color: var(--c-line); color: var(--c-ink); }
+  .btn-danger { background: var(--c-danger); color: #1b0407; }
+
+  .fab {
+    position: absolute; right: 20px; bottom: 22px;
+    display: inline-flex; align-items: center; gap: 9px;
+    padding: 14px 20px 14px 16px; border-radius: 16px;
+    background: var(--c-signal); color: #04120f; font-weight: 600; font-size: .96rem;
+    box-shadow: 0 14px 30px -12px rgba(51,222,207,.5);
+  }
+
+  /* form controls */
+  .field { display: flex; flex-direction: column; gap: 8px; }
+  .field .val { background: var(--c-ground); border: 1px solid var(--c-line); border-radius: 12px; padding: 14px; font-size: 1rem; color: var(--c-ink); }
+  .field .val.mono { font-family: var(--font-mono); }
+  .field .hint { font-size: .76rem; color: var(--c-dim); }
+  .caret { color: var(--c-signal); }
+
+  .seg { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .seg .opt { display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 14px 8px; border-radius: 12px; border: 1px solid var(--c-line); background: var(--c-ground); color: var(--c-dim); }
+  .seg .opt.sel { border-color: var(--c-signal); background: rgba(51,222,207,.08); color: var(--c-ink); }
+  .seg .opt .arw { font-family: var(--font-mono); font-size: 1.2rem; letter-spacing: .1em; color: var(--c-signal); }
+  .seg .opt.sel .arw { color: var(--c-signal); }
+  .seg .opt:not(.sel) .arw { color: var(--c-dim2); }
+  .seg .opt small { font-size: .74rem; }
+
+  .stepper { display: flex; align-items: center; gap: 12px; background: var(--c-ground); border: 1px solid var(--c-line); border-radius: 12px; padding: 8px; }
+  .stepper button { width: 40px; height: 40px; border-radius: 9px; border: 1px solid var(--c-line); background: var(--c-panel); color: var(--c-ink); font-size: 1.3rem; line-height: 1; }
+  .stepper .n { flex: 1; text-align: center; font-family: var(--font-mono); font-variant-numeric: tabular-nums; font-size: 1.5rem; font-weight: 600; }
+  .stepper .n small { font-size: .8rem; color: var(--c-dim); font-weight: 400; }
+
+  /* slider */
+  .slider { position: relative; height: 8px; border-radius: 999px; background: var(--c-line); margin: 14px 8px; }
+  .slider .fill { position: absolute; left: 0; top: 0; bottom: 0; border-radius: 999px; background: var(--c-signal); }
+  .slider .knob { position: absolute; top: 50%; width: 22px; height: 22px; border-radius: 50%; background: var(--c-signal); transform: translate(-50%,-50%); box-shadow: 0 0 0 5px rgba(51,222,207,.16); }
+
+  /* camera preview */
+  .preview { position: relative; border-radius: 14px; overflow: hidden; height: 208px; border: 1px solid var(--c-line);
+    background:
+      radial-gradient(120% 90% at 50% 8%, #1a2a33 0%, #0e161c 46%, #070c11 100%);
+  }
+  .floor { position: absolute; left: 0; right: 0; bottom: 0; height: 46%;
+    background: linear-gradient(180deg, rgba(30,48,58,0) 0%, rgba(24,40,50,.55) 60%, rgba(16,28,36,.9) 100%); }
+  .gate { position: absolute; inset: 0; display: grid; place-items: center; }
+  .roi { position: absolute; left: 15%; top: 16%; right: 15%; bottom: 20%;
+    border: 1.5px dashed var(--c-signal); border-radius: 4px; background: rgba(51,222,207,.05); }
+  .roi .h { position: absolute; width: 12px; height: 12px; background: var(--c-signal); border: 2px solid var(--c-ground); border-radius: 3px; }
+  .roi .tl { left: -6px; top: -6px; } .roi .tr { right: -6px; top: -6px; }
+  .roi .bl { left: -6px; bottom: -6px; } .roi .br { right: -6px; bottom: -6px; }
+  .roi .tm { left: 50%; top: -6px; transform: translateX(-50%); } .roi .bm { left: 50%; bottom: -6px; transform: translateX(-50%); }
+  .roi .lm { left: -6px; top: 50%; transform: translateY(-50%); } .roi .rm { right: -6px; top: 50%; transform: translateY(-50%); }
+  .dirchip { position: absolute; left: 10px; top: 10px; z-index: 3; }
+  .rec-dot { position: absolute; right: 12px; top: 11px; z-index: 3; display: inline-flex; align-items: center; gap: 6px; font-family: var(--font-mono); font-size: .62rem; letter-spacing: .12em; color: var(--c-signal); }
+  .rec-dot .d { width: 7px; height: 7px; border-radius: 50%; background: var(--c-signal); }
+
+  /* motion-energy bars */
+  .meter { background: var(--c-panel); border: 1px solid var(--c-line); border-radius: 14px; padding: 12px; }
+  .meter .mhead { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 10px; }
+  .bars { position: relative; height: 92px; display: flex; align-items: flex-end; gap: 4px; padding: 0 2px; }
+  .bars .bar { flex: 1; background: var(--c-signal-dim); border-radius: 2px 2px 0 0; opacity: .5; }
+  .bars .bar.hot { background: var(--c-signal); opacity: 1; box-shadow: 0 0 10px -1px rgba(51,222,207,.6); }
+  .trigline { position: absolute; left: 0; right: 0; border-top: 1.5px dashed var(--c-record); pointer-events: none; }
+  .trigline::after { content: "trigger"; position: absolute; right: 0; top: -14px; font-family: var(--font-mono); font-size: .56rem; letter-spacing: .12em; color: var(--c-record); text-transform: uppercase; }
+
+  /* toast */
+  .toast { position: absolute; left: 18px; right: 18px; z-index: 6; display: flex; align-items: center; gap: 10px;
+    padding: 13px 15px; border-radius: 13px; background: rgba(51,222,207,.14); border: 1px solid var(--c-signal);
+    color: var(--c-signal); font-weight: 600; font-family: var(--font-mono); font-size: .9rem; letter-spacing: .01em;
+    box-shadow: 0 12px 30px -10px rgba(51,222,207,.4); }
+  .flashborder { position: absolute; inset: 6px; border-radius: 30px; border: 2px solid var(--c-signal); pointer-events: none; z-index: 5; opacity: .55; }
+
+  /* armed screen */
+  .armed { background: var(--c-ground); }
+  .armed .body { justify-content: space-between; padding-bottom: 22px; }
+  .armed-top { display: flex; align-items: center; justify-content: space-between; }
+  .armed-badge { display: inline-flex; align-items: center; gap: 8px; font-family: var(--font-mono); font-size: .74rem; letter-spacing: .22em; text-transform: uppercase; color: var(--c-signal); }
+  .pulse { width: 11px; height: 11px; border-radius: 50%; background: var(--c-signal); box-shadow: 0 0 0 0 rgba(51,222,207,.6); animation: pulse 1.6s ease-out infinite; }
+  @keyframes pulse { 0% { box-shadow: 0 0 0 0 rgba(51,222,207,.55);} 70%{ box-shadow: 0 0 0 12px rgba(51,222,207,0);} 100%{ box-shadow:0 0 0 0 rgba(51,222,207,0);} }
+  .clockwrap { text-align: center; margin-top: 6px; }
+  .clock-label { font-family: var(--font-mono); font-size: .7rem; letter-spacing: .22em; text-transform: uppercase; color: var(--c-dim); }
+  .clock { font-family: var(--font-mono); font-variant-numeric: tabular-nums; font-weight: 600; font-size: 6.1rem; line-height: .92; letter-spacing: -0.03em; color: var(--c-ink); margin-top: 4px; }
+  .clock .u { font-size: 2rem; color: var(--c-dim); letter-spacing: 0; }
+  .statgrid { display: grid; grid-template-columns: repeat(3,1fr); gap: 10px; text-align: center; }
+  .statgrid .s { background: var(--c-panel); border: 1px solid var(--c-line); border-radius: 13px; padding: 12px 6px; }
+  .statgrid .s .k { font-family: var(--font-mono); font-size: .58rem; letter-spacing: .14em; text-transform: uppercase; color: var(--c-dim2); }
+  .statgrid .s .v { font-family: var(--font-mono); font-variant-numeric: tabular-nums; font-size: 1.7rem; font-weight: 600; margin-top: 4px; line-height: 1; }
+  .statgrid .s.best .v { color: var(--c-record); }
+  .bigbtns { display: flex; flex-direction: column; gap: 12px; }
+  .btn-stop { padding: 26px; font-size: 1.5rem; font-weight: 700; letter-spacing: .06em; border-radius: 18px; }
+
+  /* review lap table */
+  .rev-head { background: var(--c-panel); border: 1px solid var(--c-line); border-radius: 16px; padding: 14px; }
+  .rev-head .note { font-size: .84rem; color: var(--c-signal); font-style: italic; margin-top: 8px; }
+  .rev-recs { display: flex; gap: 10px; margin-top: 12px; }
+  .table { width: 100%; border-collapse: collapse; font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+  .table th { font-size: .58rem; letter-spacing: .12em; text-transform: uppercase; color: var(--c-dim2); font-weight: 500; text-align: right; padding: 4px 8px 8px; }
+  .table th:first-child { text-align: left; }
+  .table td { font-size: .92rem; padding: 8px; text-align: right; border-top: 1px solid var(--c-line); color: var(--c-ink); }
+  .table td:first-child { text-align: left; color: var(--c-dim); }
+  .table td .tod { color: var(--c-dim); font-size: .82rem; }
+  .table tr.best td { color: var(--c-record); }
+  .table tr.best td:first-child { color: var(--c-record); }
+  .lap-num { display: inline-flex; align-items: center; gap: 7px; }
+  .lap-num .bar-i { width: 3px; height: 14px; border-radius: 2px; background: transparent; }
+  tr.best .bar-i { background: var(--c-record); }
+  .b3band { position: relative; }
+  .b3band td { background: rgba(255,184,77,.06); }
+  .b3band.first td { box-shadow: inset 3px 0 0 var(--c-record); }
+  .b3band.first td:first-child::before { }
+  .discarded td { color: var(--c-dim2); text-decoration: line-through; text-decoration-color: var(--c-dim2); }
+  .discarded td:first-child { color: var(--c-dim2); }
+  .disc-tag { font-family: var(--font-mono); font-size: .54rem; letter-spacing: .1em; text-transform: uppercase; color: var(--c-danger); text-decoration: none; display: inline-block; margin-left: 6px; vertical-align: middle; }
+  .b3label { display:flex; justify-content: space-between; align-items:center; font-family: var(--font-mono); font-size: .6rem; letter-spacing: .12em; text-transform: uppercase; color: var(--c-record); padding: 8px 8px 2px; }
+
+  /* unsupported screen */
+  .unsup { display: flex; flex-direction: column; gap: 18px; padding-top: 14px; }
+  .unsup .warnmark { width: 58px; height: 58px; border-radius: 16px; display: grid; place-items: center; color: var(--c-danger); border: 1.5px solid rgba(255,82,101,.5); background: rgba(255,82,101,.08); }
+  .unsup h2 { margin: 0; font-size: 1.3rem; letter-spacing: -0.01em; line-height: 1.25; }
+  .unsup .lead { color: var(--c-dim); font-size: .92rem; line-height: 1.5; margin: 0; }
+  .probe { display: flex; align-items: center; gap: 12px; padding: 13px 14px; border: 1px solid var(--c-line); border-radius: 12px; background: var(--c-panel); }
+  .probe .pn { flex: 1; }
+  .probe .pn .t { font-weight: 600; font-size: .95rem; }
+  .probe .pn .d { font-size: .74rem; color: var(--c-dim); font-family: var(--font-mono); }
+  .probe .st { width: 26px; height: 26px; border-radius: 50%; display: grid; place-items: center; flex: none; }
+  .probe.pass .st { color: var(--c-signal); background: rgba(51,222,207,.12); }
+  .probe.fail { border-color: rgba(255,82,101,.4); }
+  .probe.fail .st { color: var(--c-danger); background: rgba(255,82,101,.12); }
+  .guide { background: rgba(51,222,207,.06); border: 1px solid var(--c-signal-dim); border-radius: 12px; padding: 14px; font-size: .86rem; line-height: 1.5; color: var(--c-ink); }
+  .guide b { color: var(--c-signal); }
+
+  .footer { max-width: 1220px; margin: 60px auto 0; padding-top: 20px; border-top: 1px solid var(--pg-line); color: var(--pg-dim); font-size: .84rem; font-family: var(--font-mono); letter-spacing: .02em; }
+
+  :focus-visible { outline: 2px solid var(--pg-accent); outline-offset: 3px; }
+  @media (prefers-reduced-motion: reduce) { .pulse { animation: none; } }
+</style>
+
+<div class="page">
+
+  <header class="masthead">
+    <div class="brandrow">
+      <span class="mark" aria-hidden="true">
+        <svg class="ic" viewBox="0 0 24 24" style="width:26px;height:26px"><circle cx="12" cy="13" r="8"/><path d="M12 13V8.5M12 5V3M9.5 3h5"/></svg>
+      </span>
+      <h1 class="wordmark">Chrono<b>Whoop</b></h1>
+      <div class="sigbars" aria-hidden="true">
+        <i style="height:38%"></i><i style="height:56%"></i><i style="height:44%"></i>
+        <i class="hot" style="height:82%"></i><i class="hot" style="height:100%"></i><i class="hot" style="height:74%"></i>
+        <i style="height:50%"></i><i style="height:34%"></i><i style="height:26%"></i>
+      </div>
+    </div>
+    <p class="tagline">Phone-first PWA lap timer for tiny-whoop racing. Prop the phone beside a gate, calibrate the region of interest, arm, and it calls your laps aloud. UI mockups below — dark by design, because these screens live in dim gyms. <strong>Amber marks records, cyan marks live sensor data.</strong></p>
+  </header>
+
+  <div class="legend" role="note">
+    <span class="lg"><span class="sw" style="background:#ffb84d"></span><b>Amber</b> — records &amp; personal bests</span>
+    <span class="lg"><span class="sw" style="background:#33decf"></span><b>Cyan</b> — live detection: ROI, motion energy, armed</span>
+    <span class="lg"><span class="sw" style="background:#ff5265"></span><b>Red</b> — stop (destructive, semantic only)</span>
+  </div>
+
+  <div class="gallery">
+
+    <!-- ============ 1. HOME / COURSE LIST ============ -->
+    <div class="item">
+      <div class="phone"><div class="screen">
+        <div class="statusbar"><span>20:14</span><span class="sysicons"><span>LTE</span><span class="batt"></span></span></div>
+        <div class="body">
+          <div class="appbar">
+            <div class="title"><h1>Courses</h1></div>
+            <div class="actions">
+              <button class="iconbtn" aria-label="Import"><svg class="ic" viewBox="0 0 24 24"><path d="M12 15V3M8 7l4-4 4 4M4 15v4a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-4"/></svg></button>
+              <button class="iconbtn" aria-label="Export"><svg class="ic" viewBox="0 0 24 24"><path d="M12 3v12M8 11l4 4 4-4M4 15v4a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-4"/></svg></button>
+            </div>
+          </div>
+          <span class="chip ok" style="align-self:flex-start">
+            <svg class="ic-sm" viewBox="0 0 24 24"><path d="M12 3l7 3v5c0 4.4-3 7.6-7 9-4-1.4-7-4.6-7-9V6z"/><path d="M9 12l2 2 4-4"/></svg>
+            Storage persisted
+          </span>
+
+          <div class="list" style="gap:12px">
+            <div class="card course">
+              <div class="top">
+                <div><div class="cname">Basement 3-gate</div><div class="meta">4 sessions · last flown Jul 11</div></div>
+                <svg class="ic" viewBox="0 0 24 24" style="color:var(--c-dim2)"><path d="M9 6l6 6-6 6"/></svg>
+              </div>
+              <div class="recs">
+                <div class="rec"><div class="k">Best lap</div><div class="v">12.84<small>s</small></div></div>
+                <div class="rec b3"><div class="k">Best 3</div><div class="v">39.30<small>s</small></div></div>
+              </div>
+            </div>
+            <div class="card course">
+              <div class="top">
+                <div><div class="cname">Club night · 4-gate</div><div class="meta">6 sessions · last flown Jul 9</div></div>
+                <svg class="ic" viewBox="0 0 24 24" style="color:var(--c-dim2)"><path d="M9 6l6 6-6 6"/></svg>
+              </div>
+              <div class="recs">
+                <div class="rec"><div class="k">Best lap</div><div class="v">13.61<small>s</small></div></div>
+                <div class="rec b3"><div class="k">Best 3</div><div class="v">41.88<small>s</small></div></div>
+              </div>
+            </div>
+            <div class="card course">
+              <div class="top">
+                <div><div class="cname">Garage loop</div><div class="meta">2 sessions · last flown Jul 6</div></div>
+                <svg class="ic" viewBox="0 0 24 24" style="color:var(--c-dim2)"><path d="M9 6l6 6-6 6"/></svg>
+              </div>
+              <div class="recs">
+                <div class="rec"><div class="k">Best lap</div><div class="v">15.02<small>s</small></div></div>
+                <div class="rec b3"><div class="k">Best 3</div><div class="v">46.71<small>s</small></div></div>
+              </div>
+            </div>
+          </div>
+
+          <div class="fab"><svg class="ic" viewBox="0 0 24 24" style="width:20px;height:20px"><path d="M12 5v14M5 12h14"/></svg>New course</div>
+        </div>
+      </div></div>
+      <div class="caption">
+        <p class="eyebrow"><span class="num">01</span> Home</p>
+        <h3>Course list</h3>
+        <p>Every course shows its <b>all-time best lap</b> and <b>best-3</b> straight on the card. The <b>Storage persisted</b> chip confirms OPFS won't be evicted; import/export live in the bar; <b>New course</b> is the thumb-reach action.</p>
+      </div>
+    </div>
+
+    <!-- ============ 2. NEW COURSE ============ -->
+    <div class="item">
+      <div class="phone"><div class="screen">
+        <div class="statusbar"><span>20:15</span><span class="sysicons"><span>LTE</span><span class="batt"></span></span></div>
+        <div class="body">
+          <div class="appbar">
+            <div class="title">
+              <button class="backbtn" aria-label="Back"><svg class="ic" viewBox="0 0 24 24"><path d="M15 6l-6 6 6 6"/></svg></button>
+              <h1>New course</h1>
+            </div>
+          </div>
+
+          <div class="stack" style="margin-top:6px">
+            <div class="field">
+              <span class="label">Name</span>
+              <div class="val">Basement 3-gate<span class="caret">|</span></div>
+            </div>
+
+            <div class="field">
+              <span class="label">Crossing direction</span>
+              <div class="seg">
+                <div class="opt sel"><span class="arw">→</span><span>Left to right</span><small>counts this way</small></div>
+                <div class="opt"><span class="arw">←</span><span>Right to left</span><small>&nbsp;</small></div>
+              </div>
+              <span class="hint">Which way through the gate counts as a lap. The other direction is ignored.</span>
+            </div>
+
+            <div class="field">
+              <span class="label">Minimum lap time</span>
+              <div class="stepper">
+                <button aria-label="Decrease">−</button>
+                <div class="n">3.0<small> s</small></div>
+                <button aria-label="Increase">+</button>
+              </div>
+              <span class="hint">Crossings closer together than this are treated as debounce noise.</span>
+            </div>
+          </div>
+
+          <div style="margin-top:auto">
+            <button class="btn btn-primary">Create course</button>
+          </div>
+        </div>
+      </div></div>
+      <div class="caption">
+        <p class="eyebrow"><span class="num">02</span> New course</p>
+        <h3>Define the track</h3>
+        <p>Three fields only: <b>name</b>, <b>crossing direction</b> (a segmented control with literal arrow glyphs), and <b>minimum lap time</b> stepping in 0.5 s from the 3.0 s default. Direction and min-lap live on the course and seed every session.</p>
+      </div>
+    </div>
+
+    <!-- ============ 3. COURSE VIEW ============ -->
+    <div class="item">
+      <div class="phone"><div class="screen">
+        <div class="statusbar"><span>20:11</span><span class="sysicons"><span>LTE</span><span class="batt"></span></span></div>
+        <div class="body">
+          <div class="appbar">
+            <div class="title">
+              <button class="backbtn" aria-label="Back"><svg class="ic" viewBox="0 0 24 24"><path d="M15 6l-6 6 6 6"/></svg></button>
+              <div><h1>Basement 3-gate</h1><span class="sub">Left → Right · min 3.0 s</span></div>
+            </div>
+          </div>
+
+          <div class="card" style="padding:16px">
+            <div class="label" style="margin-bottom:12px">All-time records</div>
+            <div class="recs">
+              <div class="rec"><div class="k">Best lap</div><div class="v">12.84<small>s</small></div><div class="meta" style="margin-top:6px;color:var(--c-dim2)">Jul 11</div></div>
+              <div class="rec b3"><div class="k">Best 3 consecutive</div><div class="v">39.30<small>s</small></div><div class="meta" style="margin-top:6px;color:var(--c-dim2)">Jul 11</div></div>
+            </div>
+          </div>
+
+          <button class="btn btn-primary">
+            <svg class="ic" viewBox="0 0 24 24" style="width:20px;height:20px;stroke:#04120f"><path d="M8 5v14l11-7z"/></svg>
+            Start session
+          </button>
+
+          <div class="label" style="margin-top:4px">Sessions</div>
+          <div class="list">
+            <div class="card" style="padding:13px">
+              <div style="display:flex;justify-content:space-between;align-items:baseline"><span class="mono" style="font-size:.86rem">Jul 11 · 20:12</span><span class="mono" style="color:var(--c-record);font-size:.86rem">12.84 s</span></div>
+              <div class="meta" style="color:var(--c-dim);margin-top:5px">8 laps · <span style="color:var(--c-signal);font-style:italic">new props, 300 mah</span></div>
+            </div>
+            <div class="card" style="padding:13px">
+              <div style="display:flex;justify-content:space-between;align-items:baseline"><span class="mono" style="font-size:.86rem">Jul 8 · 19:40</span><span class="mono" style="color:var(--c-record);font-size:.86rem">13.11 s</span></div>
+              <div class="meta" style="color:var(--c-dim);margin-top:5px">24 laps · <span style="font-style:italic">stock setup</span></div>
+            </div>
+            <div class="card" style="padding:13px">
+              <div style="display:flex;justify-content:space-between;align-items:baseline"><span class="mono" style="font-size:.86rem">Jul 2 · 21:05</span><span class="mono" style="color:var(--c-record);font-size:.86rem">14.02 s</span></div>
+              <div class="meta" style="color:var(--c-dim);margin-top:5px">9 laps · <span style="font-style:italic">dialing pids</span></div>
+            </div>
+            <div class="card" style="padding:13px">
+              <div style="display:flex;justify-content:space-between;align-items:baseline"><span class="mono" style="font-size:.86rem">Jun 28 · 20:30</span><span class="mono" style="color:var(--c-record);font-size:.86rem">13.55 s</span></div>
+              <div class="meta" style="color:var(--c-dim);margin-top:5px">15 laps</div>
+            </div>
+          </div>
+        </div>
+      </div></div>
+      <div class="caption">
+        <p class="eyebrow"><span class="num">03</span> Course view</p>
+        <h3>Records &amp; history</h3>
+        <p>All-time <b>best lap</b> and <b>best 3 consecutive</b> across every session, each tagged with the day it was set. <b>Start session</b> is the primary CTA; below it, sessions list their date, lap count, session best, and note snippet.</p>
+      </div>
+    </div>
+
+    <!-- ============ 4. SETUP / CALIBRATION ============ -->
+    <div class="item">
+      <div class="phone"><div class="screen">
+        <div class="statusbar"><span>20:16</span><span class="sysicons"><span>60fps</span><span class="batt"></span></span></div>
+        <div class="body">
+          <div class="appbar">
+            <div class="title">
+              <button class="backbtn" aria-label="Back"><svg class="ic" viewBox="0 0 24 24"><path d="M15 6l-6 6 6 6"/></svg></button>
+              <div><h1>Calibrate</h1><span class="sub">Basement 3-gate</span></div>
+            </div>
+          </div>
+
+          <div class="preview">
+            <div class="floor"></div>
+            <span class="chip ok dirchip"><svg class="ic-sm" viewBox="0 0 24 24"><path d="M5 12h14M13 6l6 6-6 6"/></svg>L → R</span>
+            <div class="gate" aria-hidden="true">
+              <svg viewBox="0 0 300 180" width="72%" style="opacity:.95">
+                <rect x="70" y="24" width="160" height="150" rx="16" fill="none" stroke="#2c4650" stroke-width="10"/>
+                <rect x="70" y="24" width="160" height="150" rx="16" fill="none" stroke="#4d7d8c" stroke-width="2"/>
+                <g><ellipse cx="150" cy="96" rx="15" ry="9" fill="#0c1216" stroke="#33decf" stroke-width="1.4"/><circle cx="138" cy="90" r="5" fill="none" stroke="#33decf" stroke-width="1.2"/><circle cx="162" cy="90" r="5" fill="none" stroke="#33decf" stroke-width="1.2"/><circle cx="138" cy="104" r="5" fill="none" stroke="#33decf" stroke-width="1.2"/><circle cx="162" cy="104" r="5" fill="none" stroke="#33decf" stroke-width="1.2"/></g>
+              </svg>
+            </div>
+            <div class="roi">
+              <span class="h tl"></span><span class="h tr"></span><span class="h bl"></span><span class="h br"></span>
+              <span class="h tm"></span><span class="h bm"></span><span class="h lm"></span><span class="h rm"></span>
+            </div>
+          </div>
+
+          <div class="meter">
+            <div class="mhead"><span class="label">Motion energy · 12 strips</span><span class="mono" style="font-size:.66rem;color:var(--c-signal)">wave @ center</span></div>
+            <div class="bars">
+              <div class="trigline" style="bottom:50%"></div>
+              <div class="bar" style="height:24%"></div>
+              <div class="bar" style="height:31%"></div>
+              <div class="bar" style="height:28%"></div>
+              <div class="bar" style="height:37%"></div>
+              <div class="bar hot" style="height:62%"></div>
+              <div class="bar hot" style="height:78%"></div>
+              <div class="bar hot" style="height:66%"></div>
+              <div class="bar" style="height:41%"></div>
+              <div class="bar" style="height:29%"></div>
+              <div class="bar" style="height:24%"></div>
+              <div class="bar" style="height:33%"></div>
+              <div class="bar" style="height:21%"></div>
+            </div>
+          </div>
+
+          <div class="field">
+            <div style="display:flex;justify-content:space-between"><span class="label">Sensitivity</span><span class="mono" style="font-size:.72rem;color:var(--c-record)">trigger 0.42 · auto</span></div>
+            <div class="slider"><div class="fill" style="width:58%"></div><div class="knob" style="left:58%"></div></div>
+          </div>
+
+          <div class="field">
+            <span class="label">Session note</span>
+            <div class="val" style="padding:11px 13px;font-size:.9rem;color:var(--c-signal);font-style:italic">new props, 300 mah</div>
+          </div>
+
+          <button class="btn btn-ghost"><svg class="ic" viewBox="0 0 24 24" style="width:19px;height:19px"><path d="M8 5v14l11-7z"/></svg>Test mode</button>
+        </div>
+      </div></div>
+      <div class="caption">
+        <p class="eyebrow"><span class="num">04</span> Setup</p>
+        <h3>Calibration overlay</h3>
+        <p>Live camera preview with a <b>draggable ROI</b> (eight cyan handles) around the gate. The <b>12-strip motion-energy meter</b> shows a wave lighting the center strips above the auto-suggested <b>trigger line</b>; sensitivity slider and note field prefill from the last session. <b>Test mode</b> verifies before arming.</p>
+      </div>
+    </div>
+
+    <!-- ============ 5. TEST MODE ============ -->
+    <div class="item">
+      <div class="phone"><div class="screen">
+        <div class="statusbar"><span>20:17</span><span class="sysicons"><span>60fps</span><span class="batt"></span></span></div>
+        <div class="flashborder" aria-hidden="true"></div>
+        <div class="body">
+          <div class="appbar">
+            <div class="title">
+              <button class="backbtn" aria-label="Back"><svg class="ic" viewBox="0 0 24 24"><path d="M15 6l-6 6 6 6"/></svg></button>
+              <div><h1>Test mode</h1><span class="sub" style="color:var(--c-dim)">Records nothing</span></div>
+            </div>
+          </div>
+
+          <div class="preview">
+            <div class="floor"></div>
+            <div class="toast" style="top:14px">
+              <svg class="ic-sm" viewBox="0 0 24 24" style="width:18px;height:18px"><path d="M5 12l5 5L20 7"/></svg>
+              Crossing · L → R
+            </div>
+            <span class="rec-dot"><span class="d"></span>LIVE</span>
+            <div class="gate" aria-hidden="true">
+              <svg viewBox="0 0 300 180" width="72%" style="opacity:.95">
+                <rect x="70" y="24" width="160" height="150" rx="16" fill="none" stroke="#2c4650" stroke-width="10"/>
+                <rect x="70" y="24" width="160" height="150" rx="16" fill="none" stroke="#4d7d8c" stroke-width="2"/>
+                <g transform="translate(34 0)"><ellipse cx="150" cy="96" rx="15" ry="9" fill="#0c1216" stroke="#33decf" stroke-width="1.4"/><circle cx="138" cy="90" r="5" fill="none" stroke="#33decf" stroke-width="1.2"/><circle cx="162" cy="90" r="5" fill="none" stroke="#33decf" stroke-width="1.2"/><circle cx="138" cy="104" r="5" fill="none" stroke="#33decf" stroke-width="1.2"/><circle cx="162" cy="104" r="5" fill="none" stroke="#33decf" stroke-width="1.2"/><path d="M96 96 h-34" stroke="#33decf" stroke-width="2" stroke-dasharray="3 4" opacity=".7"/></g>
+              </svg>
+            </div>
+            <div class="roi">
+              <span class="h tl"></span><span class="h tr"></span><span class="h bl"></span><span class="h br"></span>
+            </div>
+          </div>
+
+          <div class="meter">
+            <div class="mhead"><span class="label">Motion energy · 12 strips</span><span class="mono" style="font-size:.66rem;color:var(--c-signal)">exiting right</span></div>
+            <div class="bars">
+              <div class="trigline" style="bottom:50%"></div>
+              <div class="bar" style="height:20%"></div>
+              <div class="bar" style="height:24%"></div>
+              <div class="bar" style="height:28%"></div>
+              <div class="bar" style="height:34%"></div>
+              <div class="bar" style="height:42%"></div>
+              <div class="bar" style="height:48%"></div>
+              <div class="bar hot" style="height:58%"></div>
+              <div class="bar hot" style="height:70%"></div>
+              <div class="bar hot" style="height:80%"></div>
+              <div class="bar hot" style="height:68%"></div>
+              <div class="bar" style="height:46%"></div>
+              <div class="bar" style="height:30%"></div>
+            </div>
+          </div>
+
+          <p style="font-size:.82rem;color:var(--c-dim);text-align:center;margin:2px 0;line-height:1.45">Wave your hand or fly through to confirm detection. Nothing is timed here.</p>
+
+          <div style="margin-top:auto">
+            <button class="btn btn-warm" style="padding:22px;font-size:1.35rem;letter-spacing:.08em">
+              <svg class="ic" viewBox="0 0 24 24" style="width:22px;height:22px;stroke:#1a1204"><path d="M12 2v9M7.5 5.5a7 7 0 1 0 9 0"/></svg>
+              ARM
+            </button>
+          </div>
+        </div>
+      </div></div>
+      <div class="caption">
+        <p class="eyebrow"><span class="num">05</span> Test mode</p>
+        <h3>Confirm before arming</h3>
+        <p>Same preview, now flashing on every detected crossing — a cyan <b>toast</b>, screen-edge flash, and audio confirm the direction reads correctly. A standing reminder that <b>nothing is recorded</b>, then a full-width amber <b>ARM</b> button to go live.</p>
+      </div>
+    </div>
+
+    <!-- ============ 6. ARMED / FLYING ============ -->
+    <div class="item">
+      <div class="phone"><div class="screen armed">
+        <div class="statusbar"><span>20:18</span><span class="sysicons"><span>60fps</span><span class="batt"></span></span></div>
+        <div class="body">
+          <div class="armed-top">
+            <span class="armed-badge"><span class="pulse"></span>Armed</span>
+            <span class="chip ok" title="Screen stays awake">
+              <svg class="ic-sm" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M2 12h2M20 12h2M5 5l1.5 1.5M17.5 17.5L19 19M19 5l-1.5 1.5M6.5 17.5L5 19"/></svg>
+              Awake
+            </span>
+          </div>
+
+          <div class="clockwrap">
+            <div class="clock-label">Current lap</div>
+            <div class="clock">08.42<span class="u"> s</span></div>
+          </div>
+
+          <div class="statgrid">
+            <div class="s"><div class="k">Last lap</div><div class="v">13.02</div></div>
+            <div class="s best"><div class="k">Session best</div><div class="v">12.84</div></div>
+            <div class="s"><div class="k">Laps</div><div class="v">7</div></div>
+          </div>
+
+          <div class="bigbtns" style="margin-top:auto">
+            <button class="btn btn-ghost" style="padding:18px;font-size:1.1rem">
+              <svg class="ic" viewBox="0 0 24 24" style="width:20px;height:20px"><path d="M3 6h18M8 6V4h8v2M6 6l1 14h10l1-14"/></svg>
+              Discard last lap
+            </button>
+            <button class="btn btn-danger btn-stop">
+              <svg viewBox="0 0 24 24" style="width:26px;height:26px;fill:#1b0407"><rect x="6" y="6" width="12" height="12" rx="2"/></svg>
+              STOP
+            </button>
+          </div>
+        </div>
+      </div></div>
+      <div class="caption">
+        <p class="eyebrow"><span class="num">06</span> Armed</p>
+        <h3>Flying — read across the room</h3>
+        <p>Extreme size contrast for a glance from the pilot's seat: the <b>running lap clock</b> is huge and white for maximum legibility, with last lap, session best (amber), and lap count below. The pulsing cyan dot means the sensor is live; the wake-lock chip means the screen won't sleep. <b>STOP</b> and <b>Discard last lap</b> are thumb-sized.</p>
+      </div>
+    </div>
+
+    <!-- ============ 7. SESSION REVIEW ============ -->
+    <div class="item">
+      <div class="phone"><div class="screen">
+        <div class="statusbar"><span>20:26</span><span class="sysicons"><span>LTE</span><span class="batt"></span></span></div>
+        <div class="body">
+          <div class="appbar">
+            <div class="title">
+              <button class="backbtn" aria-label="Back"><svg class="ic" viewBox="0 0 24 24"><path d="M15 6l-6 6 6 6"/></svg></button>
+              <div><h1>Session</h1><span class="sub">Basement 3-gate</span></div>
+            </div>
+          </div>
+
+          <div class="rev-head">
+            <div class="mono" style="font-size:.82rem;color:var(--c-dim)">Jul 11 · 20:12</div>
+            <div class="note">"new props, 300 mah"</div>
+            <div class="rev-recs">
+              <div class="rec"><div class="k">Best lap</div><div class="v">12.84<small>s</small></div></div>
+              <div class="rec b3"><div class="k">Best 3</div><div class="v">39.30<small>s</small></div></div>
+            </div>
+          </div>
+
+          <div class="card" style="padding:6px 4px">
+            <table class="table">
+              <thead><tr><th>Lap</th><th>Duration</th><th>Time</th></tr></thead>
+              <tbody>
+                <tr><td><span class="lap-num"><span class="bar-i"></span>1</span></td><td>14.02</td><td class="tod">20:12:47</td></tr>
+                <tr><td><span class="lap-num"><span class="bar-i"></span>2</span></td><td>13.55</td><td class="tod">20:13:09</td></tr>
+                <tr><td><span class="lap-num"><span class="bar-i"></span>3</span></td><td>13.10</td><td class="tod">20:13:31</td></tr>
+                <tr class="discarded"><td><span class="lap-num"><span class="bar-i"></span>4</span><span class="disc-tag">crash</span></td><td>15.90</td><td class="tod">20:13:55</td></tr>
+              </tbody>
+            </table>
+            <div class="b3label"><span>◄ Best 3 consecutive</span><span>39.30 s</span></div>
+            <table class="table">
+              <tbody>
+                <tr class="b3band first"><td><span class="lap-num"><span class="bar-i"></span>5</span></td><td>13.44</td><td class="tod">20:14:22</td></tr>
+                <tr class="b3band best"><td><span class="lap-num"><span class="bar-i"></span>6</span></td><td>12.84</td><td class="tod">20:14:47</td></tr>
+                <tr class="b3band"><td><span class="lap-num"><span class="bar-i"></span>7</span></td><td>13.02</td><td class="tod">20:15:12</td></tr>
+                <tr><td><span class="lap-num"><span class="bar-i"></span>8</span></td><td>13.71</td><td class="tod">20:15:36</td></tr>
+              </tbody>
+            </table>
+          </div>
+          <p style="font-size:.76rem;color:var(--c-dim);text-align:center;margin:0;line-height:1.45">Lap 4 discarded after a crash — the best-3 window can't span it.</p>
+        </div>
+      </div></div>
+      <div class="caption">
+        <p class="eyebrow"><span class="num">07</span> Review</p>
+        <h3>Lap table</h3>
+        <p>Header carries course, date, note, and both records. Each lap lists duration to <b>two decimals</b> and its time of day. The <b>best lap</b> (6) is amber; the <b>best-3 window</b> (5–7) is a bracketed amber band; the discarded lap (4) is struck through and, crucially, breaks the window so it can't be spanned.</p>
+      </div>
+    </div>
+
+    <!-- ============ 8. UNSUPPORTED BROWSER ============ -->
+    <div class="item">
+      <div class="phone"><div class="screen">
+        <div class="statusbar"><span>20:09</span><span class="sysicons"><span>LTE</span><span class="batt"></span></span></div>
+        <div class="body">
+          <div class="unsup">
+            <div class="warnmark"><svg class="ic" viewBox="0 0 24 24" style="width:28px;height:28px"><path d="M12 3l9 16H3z"/><path d="M12 10v4M12 17h.01"/></svg></div>
+            <div>
+              <h2>This browser can't run ChronoWhoop</h2>
+              <p class="lead">The timer needs a few web platform features that aren't all available here.</p>
+            </div>
+
+            <div class="stack" style="gap:10px">
+              <div class="probe fail">
+                <div class="pn"><div class="t">WebGPU</div><div class="d">detection pipeline</div></div>
+                <div class="st"><svg class="ic-sm" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg></div>
+              </div>
+              <div class="probe pass">
+                <div class="pn"><div class="t">Camera</div><div class="d">getUserMedia · rear</div></div>
+                <div class="st"><svg class="ic-sm" viewBox="0 0 24 24"><path d="M5 12l4 4L19 6"/></svg></div>
+              </div>
+              <div class="probe pass">
+                <div class="pn"><div class="t">Local storage</div><div class="d">OPFS · sessions</div></div>
+                <div class="st"><svg class="ic-sm" viewBox="0 0 24 24"><path d="M5 12l4 4L19 6"/></svg></div>
+              </div>
+              <div class="probe pass">
+                <div class="pn"><div class="t">Speech</div><div class="d">lap announcements</div></div>
+                <div class="st"><svg class="ic-sm" viewBox="0 0 24 24"><path d="M5 12l4 4L19 6"/></svg></div>
+              </div>
+            </div>
+
+            <div class="guide">
+              WebGPU powers the motion detector. Open ChronoWhoop in <b>Chrome 121+ on Android</b> or <b>desktop Chromium</b> (Chrome or Edge). iOS Safari 26+ works best-effort.
+            </div>
+          </div>
+        </div>
+      </div></div>
+      <div class="caption">
+        <p class="eyebrow"><span class="num">08</span> Edge state</p>
+        <h3>Unsupported browser</h3>
+        <p>A per-capability probe instead of a dead end: <b>WebGPU</b>, camera, OPFS, and Web Speech each report pass or fail, so the missing piece is obvious. Here WebGPU is unavailable; guidance points to a supported Chromium build.</p>
+      </div>
+    </div>
+
+  </div>
+
+  <footer class="footer">ChronoWhoop — static UI mockups · phones deliberately dark, gallery shell follows your theme · realistic data throughout</footer>
+</div>
