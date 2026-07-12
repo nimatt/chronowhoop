@@ -27,6 +27,28 @@ Repo state at start: greenfield — docs only, clean working tree at `006ee91`.
 - **chronowhoop.com zone** — confirmed already in the Cloudflare account; local `bun run deploy` is expected to work.
 - **Device procurement (work item 11)** — still open; physical-world item only the user can confirm.
 
+## Final status (end of /implement-plan run, 2026-07-12)
+
+Implemented in four local commits on main (cbf3284…3017b51), reviewed by a
+five-lens team with one fix cycle. All suites green locally: 58 unit tests,
+6 Chromium browser tests (OPFS + app-gate), 2 headless SwiftShader WebGPU
+tests, typecheck/lint/build clean.
+
+Remaining Phase 1 exit items requiring user action:
+- **`bun run deploy`** — blocked for the agent by permission policy; wrangler
+  config dry-run-validated. Run it once to attach chronowhoop.com and verify
+  the on-device loop + (after a second deploy) the SW update prompt.
+- **Push to GitHub** + add `CLOUDFLARE_API_TOKEN` / `CLOUDFLARE_ACCOUNT_ID`
+  secrets — first push verifies CI green on all rigs (WebGPU-on-runner is the
+  one local finding still unconfirmed remotely).
+- **Android device procurement** (Phase 2 entry criterion).
+
+Second-review-pass findings surfaced to the user (2-cycle cap reached, not
+applied): headline items are the `required`-field disagreement (architect
+endorses, simplicity + test-rigor object while it's inert), the missing
+`.svelte` snippet in the lint self-test, and testing.md's browser-contract
+section not yet describing the component-test addition.
+
 ## Phase logs
 
 (appended by implementer subagents below)
