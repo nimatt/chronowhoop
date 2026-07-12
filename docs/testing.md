@@ -8,11 +8,13 @@ Six categories, introduced across the roadmap (`docs/plans/00-roadmap.md`). Conc
 script names live in `package.json` — refer to it rather than to any command written
 here.
 
-**Status (Phase 1):** unit tests exist and run in `check` and CI. The browser-contract
-and GPU rigs exist as hello-world **spikes** — their job this phase is to prove the CI
-harness can run each category before any product code needs it. On-device self-test,
-video-E2E, and the manual device checklist are planned; the sections below describe the
-intended shape.
+**Status (Phase 2):** unit tests cover the core services (camera, frame loop and stats,
+GPU readback stats and staging ring, audio/speech, wake lock, OPFS probes) and run in
+`check` and CI. The browser-contract and GPU rigs, spiked as hello-worlds in Phase 1,
+now run real tests: the GPU rig exercises the spike's staging ring, luminance pass, and
+texture-import probe on software WebGPU; browser-contract covers the OPFS atomic-write
+probes and mounts the real `Diag.svelte`. On-device self-test, video-E2E, and the manual
+device checklist are still planned; the sections below describe the intended shape.
 
 ## Unit
 
@@ -29,10 +31,11 @@ intended shape.
 ## Browser-contract
 
 - **Verifies:** behavior that needs a real browser — platform APIs jsdom cannot fake
-  (today the OPFS read/write spike; in Phase 6 the full storage contract suite —
-  crash-simulation, quarantine, the never-block guarantee — against both `MemoryStorage`
-  and `OpfsStorage`) and component/UI wiring that needs a real DOM (today the App
-  capability-gate test, mounting the real `App.svelte`).
+  (today OPFS read/write plus the atomic-write and persistence probes; in Phase 6 the
+  full storage contract suite — crash-simulation, quarantine, the never-block guarantee —
+  against both `MemoryStorage` and `OpfsStorage`) and component/UI wiring that needs a
+  real DOM (today the App capability-gate test and the `/diag` panel smoke test, mounting
+  the real components).
 - **Does not:** exercise the GPU pipeline (that is GPU-golden) or assert full product
   flows over recorded video (that is video-E2E).
 - **Where:** real browsers via Vitest browser mode with the Playwright provider —
@@ -53,11 +56,16 @@ intended shape.
   is what the on-device self-test is for.
 - **Where:** headless Chromium with software WebGPU (SwiftShader; the exact Chromium flags
   live in `vitest.config.ts`) in CI, since GitHub-hosted runners have no GPU; also locally.
+  Known rig limit: constructed-`VideoFrame` sources drop the WebGPU instance under
+  SwiftShader (see [ADR 0008](decisions/0008-device-matrix.md), texture-import section) —
+  deterministic tests use canvas/ImageBitmap sources.
 - **Gating:** yes, once it exists. The Phase 1 spike (hello-world compute dispatch +
   `mapAsync` readback) exists to prove the software-WebGPU rig runs in CI at all — if it
   could not, the whole automated GPU strategy needed a different answer before any WGSL was
   written.
-- **Introduced:** rig spiked in Phase 1; real golden + determinism tests arrive in Phase 3.
+- **Introduced:** rig spiked in Phase 1; Phase 2 put the spike's real GPU modules (staging
+  ring, luminance pass, texture-import probe) on it; real golden + determinism tests
+  arrive in Phase 3.
 
 ## On-device self-test
 

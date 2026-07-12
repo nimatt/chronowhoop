@@ -92,6 +92,16 @@ describe('seam/opfs-only-in-core-storage', () => {
     )
   })
 
+  test('OPFS code in a typed .svelte.ts rune module errors (TS parsing is wired up)', async () => {
+    // A parse error would surface as a null-ruleId message and the seam rule
+    // would be absent, so this also guards the `**/*.svelte.ts` parser config.
+    await expectSeamError(
+      'const dir: Promise<FileSystemDirectoryHandle> = navigator.storage.getDirectory()\nexport { dir }',
+      'src/ui/a.svelte.ts',
+      'no-restricted-syntax',
+    )
+  })
+
   test('OPFS code in a browser-mode test file passes', async () => {
     await expectNoSeamError('navigator.storage.getDirectory()', 'src/core/storage/a.browser.test.ts')
   })
