@@ -2,7 +2,7 @@
 
 A web-based lap timer for single tiny-whoop drone racing. Point a phone camera at the start/finish gate from the side, draw a region of interest, arm the timer, and fly. Every lap time is spoken aloud so you never need to look at a screen mid-flight.
 
-Built for solo practice and self-competition, e.g. entering your times at [racegow.com](https://www.racegow.com/).
+Built for solo practice and self-competition, e.g. entering your times at [racegow.com](https://www.racegow.com/). Served at [chronowhoop.com](https://chronowhoop.com); developed on GitHub.
 
 **Status: design phase — no code yet.** See [docs/](docs/) for specs and decisions.
 
@@ -18,13 +18,13 @@ Detection runs entirely in the browser using WebGPU: frame differencing against 
 
 ## Requirements
 
-- A browser with **WebGPU**, **camera access**, and **OPFS**: Chrome/Edge on desktop or Android, Safari 26+ on iOS/macOS. Unsupported browsers get a clear error screen — there is no fallback pipeline.
+- A browser with **WebGPU**, **camera access**, and **OPFS**: Chrome/Edge on desktop or Android. Safari 26+ on iOS/macOS is best-effort, not officially supported. Unsupported browsers get a clear error screen — there is no fallback pipeline.
 - No account, no backend. All data lives on the device (origin-private file system) as JSON; export/import moves it between devices.
 - Works fully offline after first load (installable PWA).
 
 ## Development
 
-Planned stack: TypeScript, Vite, Svelte 5, Vitest; deployed as static assets on Cloudflare Workers via Wrangler.
+Planned stack: TypeScript, Vite, Svelte 5, Vitest; deployed as static assets on Cloudflare Workers via Wrangler, at https://chronowhoop.com. CI and deploys run on GitHub Actions.
 
 ```sh
 npm install
@@ -41,4 +41,5 @@ npm run deploy   # wrangler deploy
 | [docs/specs/](docs/specs/) | Product and technical specs (source of truth for behavior) |
 | [docs/decisions/](docs/decisions/) | Architecture decision records |
 | [docs/plans/](docs/plans/) | Implementation plans |
+| [docs/mockups/](docs/mockups/) | UI mockups (static HTML) |
 | [docs/runbooks/](docs/runbooks/) | Operational guides (deploy, debug) |

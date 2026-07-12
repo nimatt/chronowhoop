@@ -6,7 +6,8 @@ Web-based tiny-whoop lap timer: WebGPU camera-based gate detection, spoken lap t
 
 - TypeScript + Vite + Svelte 5 (runes), Vitest for tests
 - WGSL shaders for the detection pipeline
-- Wrangler deploys the Vite build as Cloudflare Workers static assets
+- Wrangler deploys the Vite build as Cloudflare Workers static assets, served at https://chronowhoop.com (Workers custom domain)
+- Hosted on GitHub; CI and deploy-on-main run as GitHub Actions workflows
 - PWA: service worker precaches the full bundle; app must work offline
 
 ## Architecture rules

@@ -1,6 +1,6 @@
 # 0001 — Phone-first installable PWA, desktop also supported
 
-**Status:** accepted, 2026-07-12
+**Status:** accepted, 2026-07-12. Refined by [0006](0006-ios-best-effort.md): iOS is best-effort, not gating.
 
 ## Context
 
