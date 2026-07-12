@@ -78,7 +78,7 @@ describe('App capability gate wiring', () => {
 
     setHash('#/lab')
     mountApp(pending)
-    await waitForText('GPU pipeline lab')
+    await waitForText('Detection pipeline lab')
     expect(text()).not.toContain('Checking browser capabilities')
   })
 

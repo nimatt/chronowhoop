@@ -12,6 +12,8 @@ export interface CameraTrackLike extends AutoControlTrackLike {
   readonly label?: string
   stop(): void
   getSettings?(): CameraTrackSettings
+  addEventListener?(type: 'ended', listener: () => void): void
+  removeEventListener?(type: 'ended', listener: () => void): void
 }
 
 export interface CameraStreamLike {
@@ -55,6 +57,7 @@ export type CameraErrorKind =
   | 'constraints-unsatisfiable'
   | 'aborted'
   | 'getusermedia-unsupported'
+  | 'track-ended'
   | 'unknown'
 
 export interface CameraError {
@@ -168,6 +171,7 @@ export class CameraService<S extends CameraStreamLike = MediaStream> {
   // Bumped by stop(); an in-flight request that outlives its generation
   // discards (and tears down) whatever getUserMedia eventually returns.
   #generation = 0
+  #unwatchTrackEnded: (() => void) | null = null
 
   constructor(mediaDevices: CameraMediaDevicesLike<S> | undefined = defaultMediaDevices<S>()) {
     this.#mediaDevices = mediaDevices
@@ -197,6 +201,8 @@ export class CameraService<S extends CameraStreamLike = MediaStream> {
   stop(): void {
     this.#generation++
     this.#pending = null
+    this.#unwatchTrackEnded?.()
+    this.#unwatchTrackEnded = null
     if (this.#state.status === 'active') stopTracks(this.#state.stream)
     if (this.#state.status !== 'idle') this.#setState({ status: 'idle' })
   }
@@ -228,7 +234,37 @@ export class CameraService<S extends CameraStreamLike = MediaStream> {
       stopTracks(stream)
       return this.#state
     }
+    this.#watchTrackEnded(stream)
     return this.#setState({ status: 'active', stream, granted: readGranted(stream) })
+  }
+
+  // The video track can end outside stop() — device unplugged, OS revoked the
+  // permission mid-run, another app claimed the camera. Without this the
+  // service would keep reporting a dead stream as 'active'; instead the death
+  // surfaces to subscribers as a distinct failure state ('unavailable' /
+  // 'track-ended'), never as 'idle' — 'idle' is reserved for deliberate
+  // stop(), so consumers can tell external death from their own teardown.
+  #watchTrackEnded(stream: S): void {
+    const track = stream.getVideoTracks?.()[0] ?? stream.getTracks()[0]
+    if (!track?.addEventListener || !track.removeEventListener) return
+    const generation = this.#generation
+    const onEnded = () => {
+      if (generation !== this.#generation) return
+      this.#unwatchTrackEnded = null
+      track.removeEventListener?.('ended', onEnded)
+      this.#generation++
+      this.#pending = null
+      stopTracks(stream)
+      this.#setState({
+        status: 'unavailable',
+        error: {
+          kind: 'track-ended',
+          message: 'camera track ended outside stop() (device lost, revoked, or claimed elsewhere)',
+        },
+      })
+    }
+    track.addEventListener('ended', onEnded)
+    this.#unwatchTrackEnded = () => track.removeEventListener?.('ended', onEnded)
   }
 
   #setState(state: CameraState<S>): CameraState<S> {

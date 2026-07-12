@@ -27,6 +27,32 @@ function makeTrack(settings?: CameraTrackSettings, label?: string): FakeTrack {
   return track
 }
 
+interface EndableFakeTrack extends FakeTrack {
+  endedListeners: Set<() => void>
+  fireEnded(): void
+}
+
+function makeEndableTrack(): EndableFakeTrack {
+  const endedListeners = new Set<() => void>()
+  const track: EndableFakeTrack = {
+    stopCount: 0,
+    endedListeners,
+    stop() {
+      track.stopCount++
+    },
+    addEventListener(_type, listener) {
+      endedListeners.add(listener)
+    },
+    removeEventListener(_type, listener) {
+      endedListeners.delete(listener)
+    },
+    fireEnded() {
+      for (const listener of [...endedListeners]) listener()
+    },
+  }
+  return track
+}
+
 function makeStream(...tracks: FakeTrack[]): CameraStreamLike {
   return {
     getTracks: () => tracks,
@@ -325,6 +351,92 @@ describe('CameraService teardown', () => {
     expect(staleTrack.stopCount).toBe(1)
     expect(freshTrack.stopCount).toBe(0)
     expect(service.state).toBe(await fresh)
+  })
+})
+
+describe('CameraService track death', () => {
+  it('track ended outside stop() → unavailable/track-ended, tracks stopped, subscribers notified', async () => {
+    const track = makeEndableTrack()
+    const { service } = grantingService(makeStream(track))
+    await service.start()
+    const statuses = recordStatuses(service)
+
+    track.fireEnded()
+
+    expect(statuses).toEqual(['unavailable'])
+    expect(service.state).toMatchObject({
+      status: 'unavailable',
+      error: { kind: 'track-ended' },
+    })
+    expect(track.stopCount).toBe(1)
+  })
+
+  it('never reports track death as idle — external death stays distinguishable from stop()', async () => {
+    const track = makeEndableTrack()
+    const { service } = grantingService(makeStream(track))
+    await service.start()
+    track.fireEnded()
+    expect(service.state.status).not.toBe('idle')
+  })
+
+  it('stop() detaches the ended listener; a later ended event does not disturb idle', async () => {
+    const track = makeEndableTrack()
+    const { service } = grantingService(makeStream(track))
+    await service.start()
+    expect(track.endedListeners.size).toBe(1)
+
+    service.stop()
+    expect(track.endedListeners.size).toBe(0)
+
+    track.fireEnded()
+    expect(service.state).toEqual({ status: 'idle' })
+  })
+
+  it('the ended listener detaches itself after firing (no double transition)', async () => {
+    const track = makeEndableTrack()
+    const { service } = grantingService(makeStream(track))
+    await service.start()
+    const statuses = recordStatuses(service)
+
+    track.fireEnded()
+    track.fireEnded()
+    expect(statuses).toEqual(['unavailable'])
+  })
+
+  it('start() after track death issues a fresh request', async () => {
+    const first = makeEndableTrack()
+    const second = makeEndableTrack()
+    const streams = [makeStream(first), makeStream(second)]
+    const service = new CameraService({
+      getUserMedia: async () => streams.shift()!,
+    })
+
+    await service.start()
+    first.fireEnded()
+    const state = await service.start()
+    expect(state.status).toBe('active')
+    expect(second.stopCount).toBe(0)
+  })
+
+  it('a track without ended-listener support still activates and stops cleanly', async () => {
+    const track = makeTrack()
+    const { service } = grantingService(makeStream(track))
+    const state = await service.start()
+    expect(state.status).toBe('active')
+    service.stop()
+    expect(service.state).toEqual({ status: 'idle' })
+    expect(track.stopCount).toBe(1)
+  })
+
+  it('stop() after track death stays a clean transition to idle without re-stopping tracks', async () => {
+    const track = makeEndableTrack()
+    const { service } = grantingService(makeStream(track))
+    await service.start()
+    track.fireEnded()
+
+    service.stop()
+    expect(service.state).toEqual({ status: 'idle' })
+    expect(track.stopCount).toBe(1)
   })
 })
 

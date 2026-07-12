@@ -10,7 +10,6 @@
     "test": "vitest run --project unit",
     "test:browser": "vitest run --project browser",
     "test:browser-webkit": "vitest run --project browser-webkit",
-    "test:webgpu": "vitest run --project webgpu",
     "test:all": "vitest run",
     "lint": "eslint .",
     "typecheck": "tsc -b && svelte-check --tsconfig ./tsconfig.app.json",

@@ -70,10 +70,10 @@ const webCodecsRestrictedSyntax = webCodecsCaptureApis.flatMap((api) => [
 ])
 
 // Test files may touch either seam's APIs directly: unit (`*.test.ts`) and the
-// browser-mode rigs (`*.browser.test.ts`, `*.webgpu.test.ts`) are all
-// allowlisted. The browser globs are redundant with `**/*.test.ts` today but
-// kept explicit so the allowed surface stays reviewed rather than incidental.
-const seamTestFileIgnores = ['**/*.test.ts', '**/*.browser.test.ts', '**/*.webgpu.test.ts']
+// browser-mode rig (`*.browser.test.ts`) are allowlisted. The browser glob is
+// redundant with `**/*.test.ts` today but kept explicit so the allowed surface
+// stays reviewed rather than incidental.
+const seamTestFileIgnores = ['**/*.test.ts', '**/*.browser.test.ts']
 
 export default tseslint.config(
   { ignores: ['dist/', 'node_modules/'] },

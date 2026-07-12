@@ -45,6 +45,9 @@
       'No camera satisfies the requested constraints. This should not happen with ideal-only constraints; note it in the device matrix.',
     aborted: 'The camera request was aborted. Press Start camera to retry.',
     'getusermedia-unsupported': 'This browser does not expose getUserMedia.',
+    'track-ended':
+      'The camera stream ended outside the app — the device was unplugged, claimed by another ' +
+      'app, or its permission was revoked mid-run. Press Start camera to retry.',
     unknown: 'Unknown camera failure — see the message below.',
   }
 

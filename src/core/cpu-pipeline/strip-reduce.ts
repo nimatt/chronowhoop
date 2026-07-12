@@ -1,9 +1,10 @@
 // CPU strip reduction — the ADR 0003 per-frame shape (luminance → EMA
 // background diff → threshold → hot-pixel count per vertical strip) as plain
 // TypeScript over an RGBA pixel buffer. Written for the /diag CPU-pipeline
-// probe that decides whether a CPU pipeline can replace WebGPU (the S22
-// Xclipse finding, see ADR 0008); if adopted, this module is the seed of the
-// production reduction stage.
+// probe that decided whether a CPU pipeline could replace WebGPU (the S22
+// Xclipse finding, see ADR 0008). Adoption happened (ADR 0009), but this
+// module stays frozen as a /diag instrument; the production reducer is
+// src/core/detection/reducer.ts.
 
 export interface StripReduceConfig {
   // Vertical strips along the travel axis (x); detection.md default.

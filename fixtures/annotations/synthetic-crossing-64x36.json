@@ -1,0 +1,16 @@
+{
+  "formatVersion": 1,
+  "tier": "must-pass",
+  "crossings": [
+    {
+      "frameIndex": 14,
+      "direction": "ltr"
+    }
+  ],
+  "conditions": {
+    "scene": "synthetic",
+    "description": "one blob fly-through left-to-right over a quiet noisy background, with timestamp jitter and one dropped frame (dt-scaling coverage)",
+    "generator": "src/core/detection/fixtures.test.ts"
+  },
+  "notes": "Synthetic seed fixture. Ground truth is mathematical (SyntheticSource.groundTruth), not hand-annotated: first frame whose blob center reaches the horizontal midpoint."
+}

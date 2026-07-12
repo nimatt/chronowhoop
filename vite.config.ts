@@ -21,7 +21,10 @@ export default defineConfig({
       registerType: 'prompt',
       devOptions: { enabled: false },
       workbox: {
-        globPatterns: ['**/*.{js,css,html,svg,ico}'],
+        // .cwclip: the bundled fixture clip the /lab self-test fetches — it
+        // must be precached so the self-test works in the installed PWA
+        // offline.
+        globPatterns: ['**/*.{js,css,html,svg,ico,cwclip}'],
       },
       manifest: {
         name: 'ChronoWhoop',

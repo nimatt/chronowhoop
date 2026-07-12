@@ -6,10 +6,10 @@ on:
   pull_request:
 
 # NOTE: there is no git remote yet, so this workflow has never executed. The
-# first push to GitHub is what verifies it. Findings below (SwiftShader flags,
-# WebKit host deps) were validated locally in Playwright's bundled browsers;
-# because Playwright pins the browser builds, CI uses the same binaries, so the
-# main residual CI risk is system libraries (covered by `--with-deps`).
+# first push to GitHub is what verifies it. Findings below (WebKit host deps)
+# were validated locally in Playwright's bundled browsers; because Playwright
+# pins the browser builds, CI uses the same binaries, so the main residual CI
+# risk is system libraries (covered by `--with-deps`).
 
 concurrency:
   group: ci-${{ github.ref }}
@@ -63,25 +63,9 @@ jobs:
       - run: bunx playwright install --with-deps webkit
       - run: bun run test:browser-webkit
 
-  # Gating: hello-world WebGPU compute dispatch + buffer readback in TRUE
-  # headless Chromium on the software (SwiftShader) backend. The launch flags
-  # live in vitest.config.ts. GitHub-hosted runners have no GPU, so this
-  # exercises exactly the software path CI will always use.
-  webgpu:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: oven-sh/setup-bun@v2
-        with:
-          bun-version: 1.3.14
-      - run: bun install --frozen-lockfile
-      - name: Cache Playwright browsers
-        uses: actions/cache@v4
-        with:
-          path: ~/.cache/ms-playwright
-          key: playwright-chromium-${{ runner.os }}-${{ hashFiles('bun.lock') }}
-      - run: bunx playwright install --with-deps chromium
-      - run: bun run test:webgpu
+  # The webgpu (SwiftShader) job is retired per ADR 0009: the reduction stage
+  # is CPU/WebCodecs, and its determinism/golden tests run as node unit tests
+  # in `check`.
 
   # Deploy the static bundle to Cloudflare Workers on push to main, only after
   # the gating jobs pass. WebKit is intentionally excluded from `needs` (it is
@@ -92,7 +76,7 @@ jobs:
   #                            Workers Routes edit rights for chronowhoop.com
   #   CLOUDFLARE_ACCOUNT_ID  — the account owning the chronowhoop.com zone
   deploy:
-    needs: [check, browser-opfs-chromium, webgpu]
+    needs: [check, browser-opfs-chromium]
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     steps:
