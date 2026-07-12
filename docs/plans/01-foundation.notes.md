@@ -57,3 +57,141 @@ Repo state at start: greenfield — docs only, clean working tree at `006ee91`.
 - **Assumption:** Added `__BUILD_ID__: 'readonly'` to ESLint globals (svelte-file linting flags it as no-undef; TS files get it from `src/vite-env.d.ts`). `scripts/` added to `tsconfig.node.json` include so the icon script is typechecked by `tsc -b`.
 - **Open question:** iOS `theme_color`/standalone styling and install-prompt behavior are unverified until an iOS device is available (ADR 0006 — best-effort, skip without ceremony).
 - **Open question:** Whether the "Checking browser capabilities…" flash on slow devices needs a minimum-display/skeleton treatment — decide when the real product UI lands (Phase 6).
+
+## Phase 4 — Docs
+
+Work items 6 (documentation half — routing decision) and 10 (test taxonomy).
+Created `docs/decisions/0007-hash-routing.md` and `docs/testing.md`.
+
+- **Assumption:** ADR 0007's "roughly three visible routes" counts home plus the
+  later product screens generically; only `#/`, `#/diag`, `#/lab` exist today. The ADR
+  documents the already-implemented `src/core/routing/route.ts` split verbatim rather
+  than proposing anything new.
+- **Assumption:** `docs/testing.md` defers all concrete script names to `package.json`
+  (per task instruction — CI scripts are owned by concurrent work). It describes each
+  category and its gating status without hardcoding command strings; only the WebGPU
+  SwiftShader flag `--enable-unsafe-swiftshader` is named, quoting the plan.
+- **Assumption:** Phase attributions in `testing.md` follow the roadmap: browser-contract
+  spike in Phase 1 / contract suite Phase 6; GPU-golden rig Phase 1 / real tests Phase 3;
+  on-device self-test Phase 3; video-E2E full loop Phase 5 with Phase 3 tooling and Phase 4
+  detector assertions; manual checklist Phase 2 device-matrix / Phase 7 field acceptance.
+- **Open question:** `testing.md` names the fixture tolerances (±1 frame detection, ±2 frame
+  E2E) from the roadmap; the authoritative numbers will live in `docs/specs/detection.md`
+  once Phase 3/4 write them. If they change, the taxonomy's parenthetical should point at the
+  spec rather than restate the figures.
+- **Out of scope (noticed):** `docs/specs/product.md` and `README.md` show as modified in the
+  working tree (other agents' concurrent work); left untouched. No existing ADR, spec, or plan
+  was edited.
+
+## Phase 3 — Deploy + CI rigs
+
+Work items 3 (deploy pipeline) and 9 (CI verification spikes). Implemented 2026-07-12.
+
+### Results recorded (plan item 9: "run all three, record results")
+
+- **Node/Vitest unit rig:** unchanged — 32 tests, 3 files, green. Now runs as the
+  `unit` Vitest project (`bun run test` = `vitest run --project unit`), so `check`
+  stays fast and browser-free.
+- **Browser-context OPFS rig (Chromium, gating):** GREEN locally. `bun run test:browser`
+  writes a file through real `navigator.storage.getDirectory()` → `createWritable` →
+  reads it back and asserts content, plus runs `probeOpfs()` and asserts `{ ok: true }`.
+  Playwright's bundled Chromium, true headless.
+- **Browser-context OPFS rig (WebKit, informational):** could NOT run on this machine —
+  Playwright WebKit needs host libs that require sudo to install (`libevent-2.1-7t64`,
+  `libavif16`, `libmanette-0.2-0`, `libwoff1`). Per ADR 0006 this is best-effort, so it
+  is wired as a `continue-on-error: true` CI job (with `playwright install --with-deps
+  webkit`, which installs those libs on the runner) and left non-gating. Unverified until
+  first CI run.
+- **Headless Chromium WebGPU rig (gating):** GREEN locally in TRUE headless Playwright
+  Chromium on the software (SwiftShader) backend. `bun run test:webgpu` requests
+  adapter+device, dispatches a `@workgroup_size(64)` WGSL compute shader that doubles an
+  8-element `f32` array, reads back via `copyBufferToBuffer` + `mapAsync`, and asserts
+  exact values `[2,4,…,16]`.
+
+### Exact WebGPU launch flags (the core deliverable)
+
+Flags set in `vitest.config.ts` (`webgpu` project, via `playwright({ launchOptions: { args } })`):
+
+```
+--enable-unsafe-swiftshader
+--enable-unsafe-webgpu
+--enable-features=Vulkan
+--use-vulkan=swiftshader
+```
+
+Empirically narrowed on this machine (Playwright Chromium, bun 1.3.14):
+
+- `--enable-unsafe-swiftshader` **alone → FAILS** (`requestAdapter()` returns null). This
+  flag only re-enables the SwiftShader *GL* fallback; it does not by itself yield a WebGPU
+  adapter here.
+- The **software WebGPU adapter comes from the Dawn Vulkan backend on SwiftShader's Vulkan
+  ICD**: `--enable-unsafe-webgpu` + `--enable-features=Vulkan` + `--use-vulkan=swiftshader`
+  is the minimal set that passed. Dropping any one of the three failed.
+- `--enable-unsafe-swiftshader` is kept in the committed set as a documented, harmless CI
+  guard (it is the flag Chromium release notes point CI at, and some Chromium versions gate
+  the software adapter behind it). `--use-angle=swiftshader` was tried and is NOT needed
+  (it only affects WebGL/ANGLE, not the Vulkan WebGPU path); dropped.
+
+### Wrangler config validation
+
+- `wrangler.jsonc`: assets-only Worker (no `main`), `assets.directory: ./dist`,
+  `not_found_handling: single-page-application`, `routes: [{ pattern: "chronowhoop.com",
+  custom_domain: true }]`, `compatibility_date: 2026-07-12`.
+- `bunx wrangler deploy --dry-run` PASSED: read 12 files from `./dist`, no bindings,
+  "--dry-run: exiting now." No real deploy was executed (orchestrator runs `bun run deploy`
+  separately with user-visible permissions).
+
+### Assumptions
+
+- **Vitest projects, not a separate Playwright harness.** Config moved out of
+  `vite.config.ts` into a dedicated `vitest.config.ts` with four `projects`: `unit` (node),
+  `browser` (chromium browser-mode, `*.browser.test.ts`), `browser-webkit` (webkit, same
+  files), `webgpu` (chromium + SwiftShader flags, `*.webgpu.test.ts`). `vite.config.ts` lost
+  its `test` block and now imports `defineConfig` from `vite` (app build only). Browser
+  projects deliberately do NOT load the svelte/PWA plugins — the spikes are plain-TS core
+  tests, and keeping the service worker out of the test server avoids interference.
+- **Provider is the Vitest 4 factory API.** Vitest 4.1.10 replaced the `provider: 'playwright'`
+  string with a factory: added `@vitest/browser-playwright` and use `playwright()` /
+  `playwright({ launchOptions: { args } })`. Also added `@vitest/browser`.
+- **Unit `include` overlaps browser globs**, so the `unit` project explicitly excludes
+  `*.browser.test.ts` and `*.webgpu.test.ts` (both end in `.test.ts` and would otherwise be
+  picked up by the node runner).
+- **WebGPU/OPFS types in tests:** added `@webgpu/types` as a dev dep and to
+  `tsconfig.app.json` `types` so `navigator.gpu`/`GPUBufferUsage` typecheck in the spike; DOM
+  lib already covers `navigator.storage`. `vitest.config.ts` added to `tsconfig.node.json`
+  include so `tsc -b` typechecks it.
+- **ESLint OPFS allowlist:** `*.browser.test.ts` already matched the existing `**/*.test.ts`
+  ignore, but `**/*.browser.test.ts` and `**/*.webgpu.test.ts` were added explicitly (with a
+  comment) so the allowed surface stays reviewed rather than incidental.
+- **`not_found_handling: single-page-application`** despite hash routing — the server only
+  ever sees `/` for real navigations, so this is purely defensive (stray deep links / hard
+  refreshes resolve to the app shell instead of a bare 404).
+- **Deploy is a gated job inside `ci.yml`** (`needs: [check, browser-opfs-chromium, webgpu]`,
+  `if: push to main`) rather than a separate `workflow_run` workflow — guarantees "after CI
+  passes" ordering without cross-workflow plumbing. `bun run deploy` = `bun run build &&
+  wrangler deploy`.
+
+### Open questions
+
+- **CI never executed (no git remote).** All three rigs are green LOCALLY and the workflow
+  YAML parses, but nothing has run on a GitHub runner. First push verifies. Because Playwright
+  pins its browser builds, CI Chromium == local Chromium, so the SwiftShader flags should
+  hold; the residual risk is the runner's system Vulkan/SwiftShader libs, which
+  `playwright install --with-deps chromium` is expected to cover. If the WebGPU job goes red
+  on GitHub runners despite this, the plan's fallback decision (self-hosted GPU runner vs
+  mandatory local pre-merge GPU suite) is owed to the user — flag it, do not silently drop the
+  job.
+- **WebKit rig is unverified** (see above) — first CI run with `--with-deps webkit` is the
+  first real signal. Non-gating regardless.
+- **Deploy secrets not set.** `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` must be added
+  as repo Actions secrets before the deploy job can run; documented in `ci.yml` comments.
+- **chronowhoop.com custom-domain attach** happens on the first real `wrangler deploy`; the
+  dry-run cannot exercise it. If the zone isn't in the authenticated account the deploy (not
+  the config) will error.
+
+### Out of scope (noticed)
+
+- No product/app-shell/capability code touched; only `vite.config.ts` (test block removed),
+  `package.json` (scripts + dev deps), `eslint.config.js` (allowlist globs), the two
+  tsconfigs, and new test/config/CI files. No git commit made. WebKit host-dep install and
+  the real `wrangler deploy` intentionally not run.

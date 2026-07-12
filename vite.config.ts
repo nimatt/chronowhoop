@@ -1,5 +1,5 @@
 import { execSync } from 'node:child_process'
-import { defineConfig } from 'vitest/config'
+import { defineConfig } from 'vite'
 import { svelte } from '@sveltejs/vite-plugin-svelte'
 import { VitePWA } from 'vite-plugin-pwa'
 
@@ -43,8 +43,4 @@ export default defineConfig({
       },
     }),
   ],
-  test: {
-    environment: 'node',
-    include: ['src/**/*.test.ts'],
-  },
 })

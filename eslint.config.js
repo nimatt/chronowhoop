@@ -68,7 +68,17 @@ export default tseslint.config(
   {
     name: 'seam/opfs-only-in-core-storage',
     files: ['**/*.ts', '**/*.js', '**/*.svelte'],
-    ignores: ['src/core/storage/**', '**/*.test.ts'],
+    // OPFS APIs live only in the storage module. Test files may touch them
+    // directly to exercise real OPFS: unit (`*.test.ts`) and the browser-mode
+    // rigs (`*.browser.test.ts`, `*.webgpu.test.ts`) are all allowlisted. The
+    // browser globs are redundant with `**/*.test.ts` today but kept explicit
+    // so the allowed surface stays reviewed rather than incidental.
+    ignores: [
+      'src/core/storage/**',
+      '**/*.test.ts',
+      '**/*.browser.test.ts',
+      '**/*.webgpu.test.ts',
+    ],
     rules: {
       'no-restricted-syntax': ['error', ...opfsRestrictedSyntax],
     },

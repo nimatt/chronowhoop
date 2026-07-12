@@ -1,0 +1,19 @@
+{
+  // Cloudflare Workers static-assets config for ChronoWhoop (ADR 0005).
+  // Assets-only Worker: no `main` / server code — the app is a static bundle
+  // built by Vite into ./dist and served directly. `bun run deploy` runs the
+  // build then `wrangler deploy`.
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "chronowhoop",
+  "compatibility_date": "2026-07-12",
+  "assets": {
+    "directory": "./dist",
+    // App uses hash routing, so the server only ever sees "/" for real
+    // navigations; SPA fallback still makes stray deep links / hard refreshes
+    // resolve to the app shell instead of a bare 404.
+    "not_found_handling": "single-page-application"
+  },
+  // Attach chronowhoop.com as a Workers custom domain declaratively. Requires
+  // the chronowhoop.com zone to exist in the authenticated Cloudflare account.
+  "routes": [{ "pattern": "chronowhoop.com", "custom_domain": true }]
+}

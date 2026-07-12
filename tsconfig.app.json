@@ -5,7 +5,7 @@
     "strict": true,
     "target": "es2023",
     "module": "esnext",
-    "types": ["svelte", "vite/client"],
+    "types": ["svelte", "vite/client", "@webgpu/types"],
     "allowArbitraryExtensions": true,
     "noEmit": true,
     /**
