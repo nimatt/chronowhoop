@@ -1,11 +1,16 @@
 <script lang="ts">
   import {
-    CpuPipelineProbe,
-    type CpuPipelineSnapshot,
-  } from '../../core/cpu-pipeline/cpu-pipeline-probe'
+    isWebCodecsCaptureSupported,
+    WebCodecsPipelineProbe,
+    type WebCodecsProbeSnapshot,
+  } from '../../core/cpu-pipeline/webcodecs-probe'
   import { DEFAULT_STRIP_REDUCE_CONFIG } from '../../core/cpu-pipeline/strip-reduce'
-  import { ASSUMED_FPS, frameIntervalForFps, latencyVerdict } from '../../core/diag/verdicts'
-  import { FrameLoop } from '../../core/frame-loop/frame-loop'
+  import {
+    ASSUMED_FPS,
+    frameIntervalForFps,
+    jitterVerdict,
+    latencyVerdict,
+  } from '../../core/diag/verdicts'
   import type { LatencyStats } from '../../core/gpu/readback-stats'
   import type { DiagSession } from './diag-session'
   import { drawStripBars } from './strip-bars'
@@ -15,58 +20,52 @@
   let { session }: { session: DiagSession } = $props()
 
   const SUSTAIN_MS = 5 * 60 * 1000
+  const supported = isWebCodecsCaptureSupported()
 
-  let willReadFrequently = $state<'on' | 'off'>('on')
   let running = $state(false)
   let sustainMode = $state(false)
   let sustainDone = $state(false)
   let elapsedMs = $state(0)
-  let snapshot = $state<CpuPipelineSnapshot | null>(null)
+  let snapshot = $state<WebCodecsProbeSnapshot | null>(null)
   let startFailure = $state<string | null>(null)
   let autoStopNotice = $state<string | null>(null)
-  let startedVideo = $state.raw<HTMLVideoElement | null>(null)
+  let startedTrack = $state.raw<MediaStreamTrack | null>(null)
 
-  let probe: CpuPipelineProbe | null = null
-  let loop: FrameLoop | null = null
+  let probe: WebCodecsPipelineProbe | null = null
   let pollTimer: ReturnType<typeof setInterval> | undefined
   let startedAtMs = 0
   let barsCanvas: HTMLCanvasElement | null = null
 
-  const ready = $derived(session.video !== null)
+  const track = $derived(
+    session.cameraState.status === 'active'
+      ? (session.cameraState.stream.getVideoTracks()[0] ?? null)
+      : null,
+  )
+  const ready = $derived(supported && track !== null)
   const frameIntervalMs = $derived(frameIntervalForFps(session.measuredFps))
   const frameIntervalAssumed = $derived(session.measuredFps === null)
   const gateFps = $derived(session.measuredFps ?? ASSUMED_FPS)
-  // Declared CPU budget (ADR 0008, CPU-pipeline probe section): the whole
-  // per-frame pipeline — downscale, readback, reduce — must fit in HALF a
-  // frame interval at the granted rate, median and p95, leaving the other
-  // half for the state machine, UI, and speech on the same thread.
+  // Same declared CPU budget as the canvas probe (ADR 0008): the whole
+  // per-frame cost must fit in half a frame interval at the granted rate.
   const cpuBudgetMs = $derived(frameIntervalMs / 2)
 
   function start(sustain: boolean) {
-    const video = session.video
-    if (video === null || running) return
+    if (track === null || running) return
     startFailure = null
     autoStopNotice = null
     snapshot = null
     sustainDone = false
     try {
-      const started = new CpuPipelineProbe(video, {
-        willReadFrequently: willReadFrequently === 'on',
+      probe = new WebCodecsPipelineProbe(track, {
+        onFrame: (energies, workingPixels) => drawStripBars(barsCanvas, energies, workingPixels),
       })
-      probe = started
-      loop = new FrameLoop(video, (sample) => {
-        started.onFrame(sample)
-        const { width, height } = started.workingSize
-        drawStripBars(barsCanvas, started.lastEnergies, width * height)
-      })
-      loop.start()
+      probe.start()
     } catch (error) {
       startFailure = errorText(error)
       probe = null
-      loop = null
       return
     }
-    startedVideo = video
+    startedTrack = track
     running = true
     sustainMode = sustain
     startedAtMs = performance.now()
@@ -82,23 +81,22 @@
   }
 
   function stop() {
-    loop?.stop()
-    loop = null
     clearInterval(pollTimer)
     pollTimer = undefined
     if (probe !== null) {
       snapshot = probe.snapshot()
+      probe.stop()
       probe = null
     }
     running = false
     sustainMode = false
-    startedVideo = null
+    startedTrack = null
   }
 
   $effect(() => {
-    if (running && session.video !== startedVideo) {
+    if (running && track !== startedTrack) {
       stop()
-      autoStopNotice = 'Stopped automatically: the camera changed mid-run.'
+      autoStopNotice = 'Stopped automatically: the camera track changed mid-run.'
     }
   })
 
@@ -108,9 +106,8 @@
     snapshot === null
       ? []
       : [
-          ['drawImage (downscale)', snapshot.stages.draw, false],
-          ['getImageData (readback)', snapshot.stages.read, false],
-          ['reduce (luminance/EMA/strips)', snapshot.stages.reduce, false],
+          ['copyTo (frame → buffer)', snapshot.stages.copy, false],
+          ['subsample + reduce', snapshot.stages.reduce, false],
           ['total (overall)', snapshot.stages.total, true],
           ['total (rolling)', snapshot.rollingTotal, true],
         ],
@@ -118,19 +115,17 @@
 </script>
 
 <p class="hint">
-  WebGPU-free candidate pipeline: video → {DEFAULT_STRIP_REDUCE_CONFIG.stripCount}-strip motion
-  energy on the CPU at ~256 px working width. Wave a hand in front of the camera — the bars are the
-  live strip energies.
+  Canvas-free candidate: MediaStreamTrackProcessor delivers VideoFrames off the camera track; the Y
+  plane is read directly (no RGBA conversion) and stride-subsampled into the same
+  {DEFAULT_STRIP_REDUCE_CONFIG.stripCount}-strip reduction. Frame timestamps come from the frames
+  themselves — their jitter row below doubles as a timestamp-source candidate.
 </p>
 
+{#if !supported}
+  <p class="error">MediaStreamTrackProcessor is not available in this browser.</p>
+{/if}
+
 <div class="controls">
-  <label>
-    willReadFrequently
-    <select bind:value={willReadFrequently} disabled={running}>
-      <option value="on">on (CPU-backed canvas)</option>
-      <option value="off">off (GPU-backed canvas)</option>
-    </select>
-  </label>
   <button onclick={() => start(false)} disabled={!ready || running}>Start</button>
   <button onclick={() => start(true)} disabled={!ready || running}>5-minute sustain</button>
   <button onclick={stop} disabled={!running}>Stop</button>
@@ -143,8 +138,8 @@
   {/if}
 </div>
 
-{#if !ready}
-  <p class="hint">Start the camera first — this probe reuses its preview stream.</p>
+{#if supported && track === null}
+  <p class="hint">Start the camera first — this probe reads its track directly.</p>
 {/if}
 
 {#if startFailure !== null}
@@ -159,20 +154,14 @@
 
 {#if snapshot !== null}
   <dl class="kv">
+    <dt>frame format</dt>
+    <dd>{snapshot.format ?? '—'} ({snapshot.codedWidth}×{snapshot.codedHeight})</dd>
     <dt>working resolution</dt>
-    <dd>
-      {snapshot.workingWidth}×{snapshot.workingHeight} (willReadFrequently {snapshot.willReadFrequently
-        ? 'on'
-        : 'off'})
-    </dd>
+    <dd>{snapshot.workingWidth}×{snapshot.workingHeight}</dd>
     <dt>processed</dt>
-    <dd>{snapshot.processed} / {snapshot.ticks} ticks ({fmtNumber(snapshot.processedPerSecond, 1)}/s)</dd>
-    <dt>rolling tick rate</dt>
-    <dd>{fmtFps(snapshot.rollingTicksPerSecond)}</dd>
-    <dt>skipped (no video)</dt>
-    <dd>{snapshot.skippedNoVideo}</dd>
-    <dt>background resets</dt>
-    <dd>{snapshot.resets}</dd>
+    <dd>{snapshot.processed} / {snapshot.frames} frames ({fmtNumber(snapshot.processedPerSecond, 1)}/s)</dd>
+    <dt>rolling frame rate</dt>
+    <dd>{fmtFps(snapshot.rollingFramesPerSecond)}</dd>
     <dt>errors</dt>
     <dd>{snapshot.errors}</dd>
   </dl>
@@ -216,6 +205,18 @@
     </table>
   </div>
   <dl class="kv">
+    <dt>frame timestamps</dt>
+    <dd>
+      median Δ {fmtMs(snapshot.frameTimestamps.medianDeltaMs)}, jitter σ {fmtMs(
+        snapshot.frameTimestamps.jitterStddevMs,
+      )} over {snapshot.frameTimestamps.count} deltas
+      <Verdict
+        verdict={jitterVerdict({
+          jitterStddevMs: snapshot.frameTimestamps.jitterStddevMs,
+          medianDeltaMs: snapshot.frameTimestamps.medianDeltaMs,
+        })}
+      />
+    </dd>
     <dt>drift</dt>
     <dd>
       {#if snapshot.drift !== undefined}
@@ -233,21 +234,6 @@
 {/if}
 
 <style>
-  label {
-    font-size: 0.85rem;
-    display: inline-flex;
-    align-items: center;
-    gap: 0.35rem;
-  }
-
-  select {
-    background: #16233c;
-    color: #e8edf7;
-    border: 1px solid #2c3850;
-    border-radius: 0.375rem;
-    padding: 0.3rem 0.4rem;
-  }
-
   .elapsed {
     font-family: monospace;
     font-size: 0.9rem;

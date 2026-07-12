@@ -67,8 +67,8 @@ Requested: `facingMode: environment`, 1280×720 ideal, 60 fps ideal.
 | Field | Granted |
 |---|---|
 | Resolution | TBD |
-| Frame rate | TBD |
-| fps vs threshold (≥60 target / 30 floor) | TBD — if 30, restate ADR 0003 / `detection.md` accuracy per threshold note |
+| Frame rate | **60 fps** (frame-loop panel, 2026-07-12) |
+| fps vs threshold (≥60 target / 30 floor) | **PASS** (≥ 60 target met) |
 
 Auto-control probe (per control: capability-advertised modes, lock attempt, whether `getSettings()` reflects the lock):
 
@@ -143,15 +143,32 @@ WebGPU-free candidate: rVFC tick → `drawImage` downscale to ~256 px working wi
 
 | Metric | willReadFrequently on | willReadFrequently off | Threshold |
 |---|---|---|---|
-| drawImage median / p95 (ms) | TBD | TBD | — (attribution) |
-| getImageData median / p95 (ms) | TBD | TBD | — (attribution) |
-| reduce median / p95 (ms) | TBD | TBD | — (attribution) |
-| **Total median / p95 (ms)** | TBD | TBD | **≤ ½ frame interval** |
-| Processed rate vs camera rate | TBD | TBD | ≈ granted fps |
-| 5-min sustain: drift / end-of-run tick rate | TBD | TBD | no upward drift |
+| drawImage median / p95 (ms) | not transcribed | not transcribed | — (attribution) |
+| getImageData median / p95 (ms) | not transcribed | not transcribed | — (attribution) |
+| reduce median / p95 (ms) | not transcribed | not transcribed | — (attribution) |
+| **Total median / p95 (ms)** | not transcribed | not transcribed | **≤ ½ frame interval** |
+| Processed rate vs camera rate | **16.3/s vs 60 — FAIL** | **30/s vs 60 — FAIL** | ≈ granted fps |
+| 5-min sustain: drift / end-of-run tick rate | — (short run failed) | — (short run failed) | no upward drift |
 | Hand-wave visible in strip bars? | TBD | TBD | sanity, not a gate |
 
-**Decision:** TBD — pass → write the ADR 0002-superseding decision (CPU pipeline, gate drops the WebGPU requirement) and amend the Phase 3 plan; miss → measure the WebGL2 fragment-pass fallback before touching ADR 0003.
+**Canvas-route result (measured 2026-07-12): FAIL.** With the camera granting 60 fps, the CPU-backed canvas sustains only 16.3 processed frames/s and the GPU-backed canvas 30/s — the pipeline halves (or worse) frame delivery, so the tick-rate gate fails before the per-frame budget is even judged. The canvas readback route (`drawImage` + `getImageData`) is the bottleneck, not the reduction math. Stage medians were not transcribed; not needed, the rate verdict is decisive.
+
+### WebCodecs capture route (declared 2026-07-12, before measurement)
+
+Second candidate, same thresholds: `MediaStreamTrackProcessor` → `VideoFrame.copyTo` → Y-plane stride-subsample → strip reduce (no canvas). The `/diag` "CPU pipeline (WebCodecs)" panel measures it. Its per-frame `VideoFrame.timestamp` deltas are also recorded — if their jitter passes the ½-interval gate, the WebCodecs frame timestamp becomes a timestamp-source candidate alongside the rVFC sources.
+
+| Metric | Value | Threshold |
+|---|---|---|
+| Frame format / coded size | TBD | informational (NV12/I420 expected → Y-plane path) |
+| copyTo median / p95 (ms) | TBD | — (attribution) |
+| subsample+reduce median / p95 (ms) | TBD | — (attribution) |
+| **Total median / p95 (ms)** | TBD | **≤ ½ frame interval** |
+| Processed rate vs camera rate (60) | TBD | ≈ granted fps |
+| Frame-timestamp median Δ / jitter σ | TBD | jitter σ ≤ ½ median Δ (timestamp-source candidate) |
+| 5-min sustain: drift / end-of-run frame rate | TBD | no upward drift |
+| Hand-wave visible in strip bars? | TBD | sanity, not a gate |
+
+**Decision:** TBD — WebCodecs pass → write the ADR 0002-superseding decision (CPU pipeline over WebCodecs capture, gate drops the WebGPU requirement, requires `MediaStreamTrackProcessor`) and amend the Phase 3 plan; miss → measure the WebGL2 fragment-pass fallback before touching ADR 0003.
 
 ## GPU device loss
 

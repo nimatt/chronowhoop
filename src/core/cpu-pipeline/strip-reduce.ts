@@ -54,18 +54,22 @@ export class StripReducer {
     this.#seeded = false
   }
 
-  // rgba is ImageData-shaped (4 bytes per pixel, row-major). Returns the
-  // per-strip hot-pixel counts; the returned array is reused across calls.
-  process(rgba: Uint8ClampedArray, width: number, height: number): Uint32Array {
-    if (rgba.length < width * height * 4) {
-      throw new Error(`pixel buffer too small: ${rgba.length} for ${width}×${height}`)
-    }
+  #prepare(width: number, height: number): void {
     if (width !== this.#width || height !== this.#height) {
       this.#width = width
       this.#height = height
       this.#ema = new Float32Array(width * height)
       this.#seeded = false
     }
+  }
+
+  // rgba is ImageData-shaped (4 bytes per pixel, row-major). Returns the
+  // per-strip hot-pixel counts; the returned array is reused across calls.
+  process(rgba: Uint8ClampedArray, width: number, height: number): Uint32Array {
+    if (rgba.length < width * height * 4) {
+      throw new Error(`pixel buffer too small: ${rgba.length} for ${width}×${height}`)
+    }
+    this.#prepare(width, height)
     const { stripCount, alpha, threshold } = this.config
     const ema = this.#ema
     const energies = this.#energies
@@ -90,6 +94,40 @@ export class StripReducer {
           energies[Math.floor((x * stripCount) / width)]++
         }
         ema[i] = background + alpha * (lum - background)
+      }
+    }
+    return energies
+  }
+
+  // Same reduction over a pre-extracted luminance plane (one byte per pixel,
+  // row-major, no padding) — the WebCodecs path reads the camera frame's Y
+  // plane directly, so no RGBA conversion exists to do.
+  processLuminance(lum: Uint8Array | Uint8ClampedArray, width: number, height: number): Uint32Array {
+    if (lum.length < width * height) {
+      throw new Error(`luminance buffer too small: ${lum.length} for ${width}×${height}`)
+    }
+    this.#prepare(width, height)
+    const { stripCount, alpha, threshold } = this.config
+    const ema = this.#ema
+    const energies = this.#energies
+    energies.fill(0)
+
+    if (!this.#seeded) {
+      for (let i = 0; i < width * height; i++) ema[i] = lum[i]
+      this.#seeded = true
+      return energies
+    }
+
+    for (let y = 0; y < height; y++) {
+      const row = y * width
+      for (let x = 0; x < width; x++) {
+        const i = row + x
+        const value = lum[i]
+        const background = ema[i]
+        if (Math.abs(value - background) > threshold) {
+          energies[Math.floor((x * stripCount) / width)]++
+        }
+        ema[i] = background + alpha * (value - background)
       }
     }
     return energies

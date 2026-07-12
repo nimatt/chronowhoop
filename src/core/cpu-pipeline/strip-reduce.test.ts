@@ -65,6 +65,27 @@ describe('StripReducer', () => {
     expect([...energies]).toEqual([2, 2, 1])
   })
 
+  it('processLuminance matches the RGBA path for gray frames', () => {
+    const rgbaReducer = new StripReducer({ stripCount: 2, alpha: 0.5, threshold: 10 })
+    const lumaReducer = new StripReducer({ stripCount: 2, alpha: 0.5, threshold: 10 })
+    const frame1 = [100, 100, 100, 100, 100, 100, 100, 100]
+    const frame2 = [150, 100, 111, 110, 100, 100, 100, 100]
+    rgbaReducer.process(grayFrame(frame1), 4, 2)
+    lumaReducer.processLuminance(new Uint8Array(frame1), 4, 2)
+    const fromRgba = [...rgbaReducer.process(grayFrame(frame2), 4, 2)]
+    const fromLuma = [...lumaReducer.processLuminance(new Uint8Array(frame2), 4, 2)]
+    expect(fromLuma).toEqual(fromRgba)
+    expect(fromLuma).toEqual([1, 1])
+  })
+
+  it('processLuminance re-seeds on dimension change and rejects short buffers', () => {
+    const reducer = new StripReducer({ stripCount: 1, alpha: 0.5, threshold: 10 })
+    reducer.processLuminance(new Uint8Array([100]), 1, 1)
+    expect([...reducer.processLuminance(new Uint8Array([200, 200]), 2, 1)]).toEqual([0])
+    expect([...reducer.processLuminance(new Uint8Array([255, 255]), 2, 1)]).toEqual([2])
+    expect(() => reducer.processLuminance(new Uint8Array(1), 2, 1)).toThrow(/too small/)
+  })
+
   it('rejects a too-small pixel buffer and a non-positive strip count', () => {
     const reducer = new StripReducer({ stripCount: 1, alpha: 0.5, threshold: 10 })
     expect(() => reducer.process(new Uint8ClampedArray(4), 2, 1)).toThrow(/too small/)

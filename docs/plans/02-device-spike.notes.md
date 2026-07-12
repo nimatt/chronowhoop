@@ -626,3 +626,29 @@ compat — see ADR 0008 "WebGPU availability"). New: `src/core/cpu-pipeline/`
 - **Open question:** if the canvas path misses the budget, `VideoFrame.copyTo`
   (WebCodecs) is the next candidate readback (async, canvas-free) before
   falling back to WebGL2 fragment passes — not built into the probe yet.
+
+### WebCodecs route (2026-07-12, after the canvas-route FAIL)
+
+Canvas route measured on the S22: 16.3 processed/s (CPU-backed) and 30/s
+(GPU-backed) against a granted 60 fps — rate gate FAIL, readback route is the
+bottleneck. Added `src/core/cpu-pipeline/webcodecs-probe.ts` + the
+"CPU pipeline (WebCodecs)" panel.
+
+- **Assumption:** planar formats (NV12/I420 — the expected Android camera
+  formats) read the Y plane directly as luminance; packed RGBA/BGRA fall back
+  to per-pixel Rec. 709 conversion during subsampling; any other format is a
+  counted error, not a crash.
+- **Assumption:** subsampling is nearest-neighbor stride-stepping (step =
+  floor(width/256)), not box filtering — cheaper, and motion energy over
+  ~35k samples doesn't need anti-aliasing; revisit only if field noise says
+  otherwise.
+- **Assumption:** `StripReducer` gained `processLuminance` (shared EMA core,
+  separate loop) rather than converting Y back into RGBA to reuse `process`.
+- **Assumption:** the probe records per-frame `VideoFrame.timestamp` deltas and
+  the panel applies the existing jitter gate to them — if they pass, WebCodecs
+  frame timestamps become a timestamp-source candidate (they are capture
+  timestamps by construction, unlike rVFC's presentation-side metadata).
+- **Open question:** MediaStreamTrackProcessor's internal buffer drops frames
+  silently under backpressure; the probe's processed-rate vs granted-fps
+  comparison is the drop detector. If Phase 3 adopts this route, dropped-frame
+  accounting needs the frame-timestamp gaps, not presentedFrames.

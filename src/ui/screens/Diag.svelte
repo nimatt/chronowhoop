@@ -9,6 +9,7 @@
   import TextureImportPanel from '../diag/TextureImportPanel.svelte'
   import ReadbackPanel from '../diag/ReadbackPanel.svelte'
   import CpuPipelinePanel from '../diag/CpuPipelinePanel.svelte'
+  import WebCodecsPanel from '../diag/WebCodecsPanel.svelte'
   import SpeechPanel from '../diag/SpeechPanel.svelte'
   import OpfsPanel from '../diag/OpfsPanel.svelte'
   import WakeLockPanel from '../diag/WakeLockPanel.svelte'
@@ -63,6 +64,10 @@
 
   <DiagPanel title="CPU pipeline">
     <CpuPipelinePanel {session} />
+  </DiagPanel>
+
+  <DiagPanel title="CPU pipeline (WebCodecs)">
+    <WebCodecsPanel {session} />
   </DiagPanel>
 
   <DiagPanel title="Speech">
