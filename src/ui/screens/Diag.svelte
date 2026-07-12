@@ -3,10 +3,15 @@
   import CapabilityList from '../CapabilityList.svelte'
 
   let report = $state<CapabilityReport | null>(null)
+  let latestRun = 0
 
   async function runProbes() {
+    const runId = ++latestRun
     report = null
-    report = await checkCapabilities()
+    const result = await checkCapabilities()
+    if (runId === latestRun) {
+      report = result
+    }
   }
 
   void runProbes()

@@ -16,9 +16,7 @@ export interface OpfsStorageLike {
   getDirectory?(): Promise<OpfsDirectoryLike>
 }
 
-export type OpfsProbeResult =
-  | { ok: true }
-  | { ok: false; reason: 'unsupported' | 'failed'; message: string }
+export type OpfsProbeResult = { ok: true } | { ok: false; message: string }
 
 function defaultStorage(): OpfsStorageLike | undefined {
   const global = globalThis as { navigator?: { storage?: OpfsStorageLike } }
@@ -27,7 +25,7 @@ function defaultStorage(): OpfsStorageLike | undefined {
 
 function failed(context: string, error: unknown): OpfsProbeResult {
   const message = error instanceof Error ? error.message : String(error)
-  return { ok: false, reason: 'failed', message: `${context}: ${message}` }
+  return { ok: false, message: `${context}: ${message}` }
 }
 
 export async function probeOpfs(
@@ -36,7 +34,6 @@ export async function probeOpfs(
   if (typeof storage?.getDirectory !== 'function') {
     return {
       ok: false,
-      reason: 'unsupported',
       message: 'navigator.storage.getDirectory is not available',
     }
   }

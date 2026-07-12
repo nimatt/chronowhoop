@@ -35,8 +35,25 @@ Repo state at start: greenfield — docs only, clean working tree at `006ee91`.
 
 - **Assumption:** TypeScript pinned to `~6.0.2` (not latest 7.0.2). `bun add -d typescript` pulled TS 7.0.2, which triggered incorrect-peer-dependency warnings from svelte-check and typescript-eslint; the current `bun create vite` svelte-ts template also pins `~6.0.2`. If TS 7 support lands in those tools, bumping is a one-line change.
 - **Assumption:** Test layout is colocated — `*.test.ts` next to the module under test (e.g. `src/core/storage/opfs-probe.test.ts`). Vitest runs node environment with `include: ['src/**/*.test.ts']` in `vite.config.ts` (config via `vitest/config`, no separate vitest.config file). Would change if a later phase wants split unit/browser-mode configs — Vitest workspaces can absorb that.
-- **Assumption:** OPFS seam implemented with `no-restricted-syntax` only, not `no-restricted-globals`. Selectors match any `MemberExpression` whose property is `getDirectory` or `createWritable` (both `.name` for dot access and computed `['getDirectory']` string access), erroring everywhere except `src/core/storage/**` and `**/*.test.ts` via config-level `files`/`ignores`. `no-restricted-globals` was not useful: the touched global is `navigator`, which legit code uses for camera/speech probes. Trade-off: any unrelated object with a `getDirectory`/`createWritable` method would false-positive outside the allowlist — accept and revisit if it ever bites (the fix would be narrower selectors keyed on `navigator.storage`).
-- **Assumption:** Core-is-framework-free rule scoped to `files: ['src/core/**']` with `no-restricted-imports` patterns `['svelte', 'svelte/*', '*.svelte', '**/*.svelte']`. Only import syntax is caught; a `require()` or dynamic `import()` of svelte would slip through — irrelevant in this ESM + lint-per-commit setup.
+- **Assumption:** OPFS seam implemented with `no-restricted-syntax` only, not `no-restricted-globals`. `no-restricted-globals` was not useful: the touched global is `navigator`, which legit code uses for camera/speech probes. Selectors match `MemberExpression`s by property name, erroring everywhere except `src/core/storage/**` and the test globs via config-level `files`/`ignores`. Trade-off: any unrelated object with a same-named method false-positives outside the allowlist — accept and revisit if it bites. Method set and matched forms were widened during the seam review — see "Seam review hardening" below (supersedes the original two-method / narrower-selector notes).
+- **Assumption:** Core-is-framework-free rule scoped to `files: ['src/core/**']` with `no-restricted-imports` patterns `['svelte', 'svelte/**', '*.svelte', '**/*.svelte']` (`svelte/**` replaced `svelte/*` so nested subpaths like `svelte/legacy/*` are caught). Only import syntax is caught; a `require()` or dynamic `import()` of svelte would slip through — irrelevant in this ESM + lint-per-commit setup.
+
+### Seam review hardening (2026-07-12)
+
+Resolution of a cluster of Phase-1 review findings on `eslint.config.js` (OPFS/core seams, globals scoping). All changes are in `eslint.config.js` plus a new permanent self-test `src/core/lint-seams.test.ts` (runs in the `unit` Vitest project). `bun run check` green after.
+
+- **One coherent OPFS selector strategy.** The seam now guards **all static syntactic forms** — dot access (`x.getDirectory`), computed-string access (`x['getDirectory']`), and destructuring (`const { getDirectory } = x`) — of the full OPFS **method table**: `getDirectory`, `getFileHandle`, `getDirectoryHandle`, `removeEntry`, `createWritable`, `createSyncAccessHandle`. Selectors are generated from that one table via `flatMap`, so widening scope is a one-line edit and the config stays reviewable.
+- **What it defends against:** accidental direct OPFS use, and a storage-module handle *leaking* into UI/core code where its methods (incl. the production `createSyncAccessHandle`, `getFileHandle`, `removeEntry`) get called directly. Previously only `getDirectory`/`createWritable` were guarded, so a leaked directory handle escaped the seam.
+- **Deliberately NOT caught (accepted residual gap, by design — the seam is a guardrail, not an adversarial boundary):** dynamic property access via a variable key (`x[name]()`), reflective access (`Reflect.get`), and re-aliasing / `.call` / `.apply`. Closing these is impossible for a static lint rule and they require intent to evade. The destructuring gap the reviewer demonstrated (`const { getDirectory } = nav.storage`) *is* now closed, as it was a cheap, single-selector static form. The self-test asserts the dynamic-access gap stays uncaught so nobody "fixes" it as a bug.
+- **Kept computed-string selectors** (a reviewer suggested dropping them as belt-and-suspenders). Dropping would weaken current coverage; generating them from the method table keeps the config compact, so the simplicity concern is addressed without losing the form.
+- **Permanent self-test** (`src/core/lint-seams.test.ts`): runs `ESLint` programmatically via `lintText({ filePath })` over inline snippets and asserts — core-importing-svelte errors (incl. a nested `svelte/legacy/*` subpath), UI-file OPFS errors for every method × every kept form, the same OPFS code inside `src/core/storage/**` passes, OPFS in a unit / browser-mode test-file path passes, and the dynamic-access gap stays uncaught. No `package.json`/`vitest.config.ts` change was needed: the file matches the `unit` project's `src/**/*.test.ts` include and imports `eslint` only in that node project (browser projects include only `*.browser.test.ts`/`*.webgpu.test.ts`, so nothing leaks). ESLint auto-discovers the flat config from cwd (Vitest root).
+- **Globals scoping.** `globals.browser` (+ `__BUILD_ID__`) is now scoped to `files: ['src/**']` instead of applied unscoped; a new block gives `globals.node` to config files and scripts (`*.config.ts`, `*.config.js`, `scripts/**`, `eslint.config.js`). Previously node config files got browser globals and no node globals (harmless today only because `no-undef` is off for TS, but wrong).
+- **Test-file OPFS exemption is project-wide** (`**/*.test.ts` etc.), so OPFS calls in *any* test file — not just storage tests — are unflagged. Accepted: tests legitimately exercise real OPFS and the exemption surface is explicitly listed/reviewed in the config comment; the storage seam is a production-code boundary, not a test-code one.
+
+## Disputed findings
+
+- **Finding (test-rigor, nit):** ci.yml's two gating jobs share an identical Playwright cache key (harmless save race, no restore-keys); reviewer said leave-as-is is acceptable.
+- **Why rejected:** Out of the allowed change scope for this task (ci.yml is not to be touched here), and the reviewer themselves rated it acceptable to leave — a benign concurrent-save race that resolves to the same artifact. No correctness or security impact. Left for a future CI-focused pass if ever worth a `restore-keys` tidy.
 - **Assumption:** `typecheck` script is `tsc -b && svelte-check --tsconfig ./tsconfig.app.json` rather than literal `tsc --noEmit`: the scaffold uses project references (`tsconfig.app.json` + `tsconfig.node.json`), both with `noEmit: true`, so `tsc -b` is the equivalent that checks both projects.
 - **Assumption:** `"strict": true` added explicitly to `tsconfig.app.json` even though the `@tsconfig/svelte` base already enables it — the plan asks for it explicitly and it survives base-config changes.
 - **Assumption:** Kept the generated template's demo content out entirely (no `app.css`, no `public/` assets, no Counter component); `src/ui/App.svelte` is a two-line placeholder. No `src/core/storage/index.ts` barrel yet — first real consumer (Phase 1 item 4 capability module) decides the module's public surface.
@@ -195,3 +212,143 @@ Empirically narrowed on this machine (Playwright Chromium, bun 1.3.14):
   `package.json` (scripts + dev deps), `eslint.config.js` (allowlist globs), the two
   tsconfigs, and new test/config/CI files. No git commit made. WebKit host-dep install and
   the real `wrangler deploy` intentionally not run.
+
+## Review-fix log (UI shell, 2026-07-12)
+
+Fixes applied from code-review findings against the Phase 1 UI shell.
+
+- **Finding 1 (SW registration in presentational banner) — applied.** `registerSW` moved out
+  of `UpdateBanner.svelte` into `src/ui/pwa.svelte.ts`, a runes module exposing `swUpdate`
+  (`.available` getter + `.activate()`). The banner now just consumes the signal.
+  `virtual:pwa-register` stays in the UI layer (vite-plugin-pwa), not `src/core`.
+- **Finding 2 (Diag re-run race) — applied.** `runProbes()` in `src/ui/screens/Diag.svelte`
+  now captures a monotonic `latestRun` id before the await and applies the result only if the
+  run is still current, preventing an overlapping re-run's stale response from winning.
+- **Finding 3 (gate wiring lacks component-level test) — applied (test written).** Initially
+  logged as accepted coverage debt; the user reversed that ("not accepting coverage debt this
+  early") and the component test was written instead. New `src/ui/app-gate.browser.test.ts`
+  (Vitest browser mode, `browser`/`browser-webkit` glob) mounts the real `App.svelte` and
+  verifies the gate wiring end-to-end. See the Phase 5 log below for the seam and config
+  judgment calls this required.
+
+No findings were rejected.
+
+## Phase 5 — App-gate component test (2026-07-12)
+
+Wrote `src/ui/app-gate.browser.test.ts` after the user rejected the Phase 1 coverage debt on
+the capability gate. The test mounts the real `App.svelte` (svelte `mount`/`unmount`, no
+`vitest-browser-svelte` needed) and asserts, via `location.hash` + real `hashchange`:
+1. pending check → home shows "Checking browser capabilities…" while `#/diag` and `#/lab`
+   render immediately (gate exemption);
+2. failing report → Unsupported with per-capability results (`WebGPU`/`FAIL`) and the
+   `#/diag` link; `#/diag` renders Diag (exempt); back to `#/` re-shows Unsupported
+   (hashchange re-evaluation);
+3. all-pass report → Home.
+
+Judgment calls:
+
+- **Injection seam:** added an optional `check` prop to `App.svelte` defaulting to the real
+  `checkCapabilities` (`let { check = checkCapabilities } = $props()`). This is the thinnest
+  seam that lets the test supply a pending / failing / all-pass report — the `browser` project
+  has no WebGPU flags, so a real all-pass report is unreachable there. `App.svelte` is
+  otherwise unchanged.
+- **`untrack` on the initial call:** reading the new `check` prop once at instance top level
+  tripped svelte's `state_referenced_locally` warning (a prop is reactive; the old
+  module-imported `checkCapabilities` was not). The read is intentionally one-shot, so it is
+  wrapped in `untrack(() => check())` to state that intent and keep `svelte-check` clean.
+- **Browser projects now load the svelte plugin.** The Phase 3 assumption "browser projects
+  deliberately do NOT load the svelte/PWA plugins" held only while the browser rigs were
+  plain-TS core spikes. A component test must compile `.svelte`, so `vitest.config.ts` now
+  gives both browser-mode projects (`browser`, `browser-webkit`) `svelte()` and the
+  `__BUILD_ID__` define (App's footer needs it), factored into a `browserProject()` helper.
+  The `unit` and `webgpu` projects stay plain-TS and unchanged.
+- **`virtual:pwa-register` stub.** Mounting `App` pulls in `UpdateBanner` → `pwa.svelte.ts` →
+  `virtual:pwa-register`, which only exists when VitePWA is loaded — and the browser projects
+  still don't load VitePWA (no service worker in the test server, per Phase 3). A tiny inline
+  Vite plugin (`stubPwaRegister` in `vitest.config.ts`) resolves the virtual id to a no-op
+  `registerSW`, so `onNeedRefresh` never fires and the banner stays hidden. Cheaper and more
+  contained than running the PWA plugin in tests.
+- **State isolation:** `history.replaceState` clears the hash in `beforeEach`; each case mounts
+  into a fresh container and unmounts in `afterEach`. The pending cases use a never-settling
+  promise so `report` stays `null`.
+- **Verified:** `bun run test:browser` green (6 tests: 2 pre-existing OPFS + 4 new gate);
+  `bun run check` green. WebKit (`test:browser-webkit`) not run here — its host libs need sudo
+  (Phase 3 note) — but it now has the same plugin/define setup so it is not left broken.
+
+## Review-fix log (docs + tooling, 2026-07-12)
+
+Fixes applied from code-review findings against the Phase 1 docs/tooling cluster
+(`docs/testing.md`, `scripts/generate-icons.ts`, `package.json`).
+
+- **Finding 1 (GPU-golden flag naming) — applied.** testing.md's GPU-golden "Where" line
+  named `--enable-unsafe-swiftshader` as *the* software-WebGPU flag, but that flag alone
+  returns a null adapter (see "Phase 3 → Exact WebGPU launch flags" above); the working set is
+  the Vulkan-on-SwiftShader trio. Softened to "SwiftShader; the exact Chromium flags live in
+  `vitest.config.ts`". Supersedes the earlier Phase 4 note that testing.md names that flag
+  "quoting the plan".
+- **Finding 2 (E2E tolerance stated as settled) — applied.** `±1 frame` is anchored in
+  `docs/specs/product.md`; the `±2 frame E2E` number lived only in the roadmap yet testing.md
+  presented both as a "fixture contract". Rephrased so ±1 is attributed to the spec and ±2 is a
+  roadmap working target pending the authoritative definition in `docs/specs/detection.md`
+  (Phase 3/4). Matches the Phase 4 open question recorded above.
+- **Finding 3 (icon generator is one-shot dead code) — applied (deleted).** Removed
+  `scripts/generate-icons.ts` (hand-rolled PNG encoder: CRC32 + deflate + glyph raster) and its
+  `package.json` `icons` script. The three outputs in `public/icons/` (`icon-192`, `icon-512`,
+  `icon-maskable-512`) are **committed artifacts** and stay; real artwork remains an explicit
+  later item (Phase 2 assumption above). The generator had no ongoing role — not in
+  `build`/`check`/`deploy`, run once, effectively dead after — so it was net surface (123 lines,
+  plus it sat in the `tsc -b` path via `tsconfig.node.json`'s `scripts/**/*.ts` include). Git
+  history preserves it if the placeholders ever need regenerating. That glob now matches nothing
+  under `scripts/`, which is harmless: `vite.config.ts` + `vitest.config.ts` keep the project
+  non-empty so `tsc -b` still resolves inputs (verified by `bun run check`).
+- **Finding 4 (capabilities.ts deep-imports `probeOpfs`) — not coded; logged as follow-up.**
+  Reviewer flagged the deep file-path import instead of a storage barrel/surface. This is the
+  deliberate deferral already recorded ("first real consumer decides the module's public
+  surface" — Phase 1 assumption) and `src/` is out of this cluster's scope. Logged under
+  "Follow-ups" below rather than changed.
+
+No findings were rejected.
+
+## Follow-ups
+
+- **Storage module public surface (Phase 6).** `src/core/capabilities.ts` imports `probeOpfs`
+  via a deep file path rather than a storage-module barrel/surface. Fine as the minimal surface
+  for a single consumer today. When the Phase 6 storage interface is introduced (the one seam
+  per CLAUDE.md), it should define the module's public surface and repoint `capabilities.ts` at
+  it.
+
+## Disputed findings — capability/probe review (2026-07-12)
+
+Review-cluster fixes applied to `capabilities.ts`/`opfs-probe.ts` and their tests
+(Findings 2, 3, 4, 5, 8 applied; 1 applied as structural-only). Findings kept as-is:
+
+- **Finding 6 (keep).** The hand-rolled `Opfs*Like` interface tower + fake in
+  `opfs-probe.test.ts` duplicates DOM types for the node test. Kept: plan item 4 explicitly
+  requires "probes injected so the module is unit-testable without real feature absence," and
+  the fake is what exercises the three failure branches (getDirectory throw, write throw,
+  cleanup throw) that `opfs.browser.test.ts` cannot force against real OPFS. Reviewer flagged
+  as "acceptable as-is, not insisting."
+
+- **Finding 7 (keep).** Boot gates first paint on real side-effecting probes (GPU device
+  create/destroy, OPFS write/delete) each launch. Kept: plan item 4 makes `requestAdapter()`
+  **and** `requestDevice()` plus the `createWritable` feature test the capability check;
+  deferring them to `/diag` would contradict the plan and weaken the gate for the hard
+  requirement. Future cheap win (not built): a per-session cache of a passing result so
+  repeat in-session navigations skip the side effects — record as an option, not a change.
+
+- **Finding 9 (keep).** `probeCamera`/`probeSpeech` are `async` without an `await`. Kept for
+  uniformity: both satisfy the `CapabilityProbes` signature (`() => Promise<ProbeOutcome>`) and
+  read alongside the genuinely async `probeWebGpu`/`probeOpfs`. Cosmetic; reviewer left it.
+
+## Open questions — for the user
+
+- **Capability gate policy (Finding 1 / product decision).** `capabilities.ts` now carries a
+  per-capability `required` flag, currently `true` for all four (WebGPU, camera, OPFS, speech),
+  so the gate = "all required probes pass" — behavior-identical to before, but the policy is now
+  explicit and there is a seam for graceful degradation. This matches the documented spec
+  (product.md "Platform requirements" and ADR 0002 both make all four hard requirements). The
+  reviewer's concern — a speech-synthesis failure alone hard-gates the whole app — is a real
+  product question but NOT one the plan decides: should a missing/failed `speechSynthesis` (or
+  camera, on a review-only desktop that just reads sessions) degrade gracefully instead of
+  showing the Unsupported screen? If yes, flip that capability's `required` to `false` and let
+  the UI surface the degraded state. Left as a product call; no behavior changed here.

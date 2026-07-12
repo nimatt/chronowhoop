@@ -14,7 +14,6 @@
     "test:all": "vitest run",
     "lint": "eslint .",
     "typecheck": "tsc -b && svelte-check --tsconfig ./tsconfig.app.json",
-    "icons": "bun scripts/generate-icons.ts",
     "check": "bun run typecheck && bun run lint && bun run test && bun run build",
     "deploy": "bun run build && wrangler deploy"
   },

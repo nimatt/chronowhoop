@@ -7,6 +7,7 @@ export type CapabilityName = 'webgpu' | 'camera' | 'opfs' | 'speech'
 export interface CapabilityResult {
   name: CapabilityName
   label: string
+  required: boolean
   ok: boolean
   detail?: string
 }
@@ -21,7 +22,7 @@ interface GpuDeviceLike {
 }
 
 export interface GpuAdapterLike {
-  requestDevice(): Promise<GpuDeviceLike | null>
+  requestDevice(): Promise<GpuDeviceLike>
 }
 
 export interface GpuLike {
@@ -44,9 +45,6 @@ export async function probeWebGpu(gpu: GpuLike | undefined = defaultGpu()): Prom
   // Requests default limits for now; Phase 3 revisits requested limits once
   // the detection pipeline's actual needs (buffer sizes, workgroup limits) are known.
   const device = await adapter.requestDevice()
-  if (!device) {
-    return { ok: false, detail: 'adapter found, but requestDevice() returned no device' }
-  }
   device.destroy?.()
   return { ok: true }
 }
@@ -90,11 +88,15 @@ export interface CapabilityProbes {
   speech(): Promise<ProbeOutcome>
 }
 
-const capabilityLabels: Record<CapabilityName, string> = {
-  webgpu: 'WebGPU',
-  camera: 'Camera (getUserMedia)',
-  opfs: 'Local storage (OPFS)',
-  speech: 'Speech synthesis',
+// Every capability is currently a hard requirement — product.md's "Platform
+// requirements" and ADR 0002 gate startup on all four. The `required` flag makes
+// that policy explicit (and gives a seam for graceful degradation later) rather
+// than baking "all-or-nothing" into the gate computation.
+const capabilityMeta: Record<CapabilityName, { label: string; required: boolean }> = {
+  webgpu: { label: 'WebGPU', required: true },
+  camera: { label: 'Camera (getUserMedia)', required: true },
+  opfs: { label: 'Local storage (OPFS)', required: true },
+  speech: { label: 'Speech synthesis', required: true },
 }
 
 const defaultProbes: CapabilityProbes = {
@@ -104,30 +106,48 @@ const defaultProbes: CapabilityProbes = {
   speech: () => probeSpeech(),
 }
 
+// A hung probe (a `requestAdapter()`/`getDirectory()` that never settles) would
+// otherwise leave the report null forever, stranding the app on its loading
+// state. Bound every probe so the gate always resolves.
+export const DEFAULT_PROBE_TIMEOUT_MS = 8000
+
+function withTimeout(promise: Promise<ProbeOutcome>, timeoutMs: number): Promise<ProbeOutcome> {
+  let timer: ReturnType<typeof setTimeout> | undefined
+  const timeout = new Promise<ProbeOutcome>((resolve) => {
+    timer = setTimeout(() => resolve({ ok: false, detail: 'probe timed out' }), timeoutMs)
+  })
+  return Promise.race([promise, timeout]).finally(() => clearTimeout(timer))
+}
+
 async function runProbe(
   name: CapabilityName,
   probe: () => Promise<ProbeOutcome>,
+  timeoutMs: number,
 ): Promise<CapabilityResult> {
-  const label = capabilityLabels[name]
+  const { label, required } = capabilityMeta[name]
   let outcome: ProbeOutcome
   try {
-    outcome = await probe()
+    outcome = await withTimeout(probe(), timeoutMs)
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error)
-    return { name, label, ok: false, detail: `probe threw: ${message}` }
+    return { name, label, required, ok: false, detail: `probe threw: ${message}` }
   }
-  return outcome.ok ? { name, label, ok: true } : { name, label, ok: false, detail: outcome.detail }
+  return outcome.ok
+    ? { name, label, required, ok: true }
+    : { name, label, required, ok: false, detail: outcome.detail }
 }
 
 export async function checkCapabilities(
   probes: Partial<CapabilityProbes> = {},
+  timeoutMs: number = DEFAULT_PROBE_TIMEOUT_MS,
 ): Promise<CapabilityReport> {
   const merged = { ...defaultProbes, ...probes }
   const capabilities = await Promise.all([
-    runProbe('webgpu', merged.webgpu),
-    runProbe('camera', merged.camera),
-    runProbe('opfs', merged.opfs),
-    runProbe('speech', merged.speech),
+    runProbe('webgpu', merged.webgpu, timeoutMs),
+    runProbe('camera', merged.camera, timeoutMs),
+    runProbe('opfs', merged.opfs, timeoutMs),
+    runProbe('speech', merged.speech, timeoutMs),
   ])
-  return { ok: capabilities.every((capability) => capability.ok), capabilities }
+  const ok = capabilities.filter((capability) => capability.required).every((capability) => capability.ok)
+  return { ok, capabilities }
 }

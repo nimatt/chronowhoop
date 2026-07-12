@@ -1,19 +1,11 @@
 <script lang="ts">
-  import { registerSW } from 'virtual:pwa-register'
-
-  let updateAvailable = $state(false)
-
-  const activateUpdateAndReload = registerSW({
-    onNeedRefresh() {
-      updateAvailable = true
-    },
-  })
+  import { swUpdate } from './pwa.svelte'
 </script>
 
-{#if updateAvailable}
+{#if swUpdate.available}
   <div class="banner" role="status">
     <span>Update available</span>
-    <button onclick={() => activateUpdateAndReload(true)}>Update now</button>
+    <button onclick={() => swUpdate.activate()}>Update now</button>
   </div>
 {/if}
 

@@ -59,17 +59,16 @@ describe('probeOpfs', () => {
     const result = await probeOpfs(undefined)
     expect(result).toEqual({
       ok: false,
-      reason: 'unsupported',
       message: 'navigator.storage.getDirectory is not available',
     })
   })
 
   it('reports unsupported when getDirectory is missing', async () => {
     const result = await probeOpfs({})
-    expect(result).toMatchObject({ ok: false, reason: 'unsupported' })
+    expect(result).toMatchObject({ ok: false })
   })
 
-  it('returns ok and cleans up the probe file on the happy path', async () => {
+  it('returns ok and removes the exact probe file it created on the happy path', async () => {
     const { storage, calls } = makeFakeStorage()
     const result = await probeOpfs(storage)
     expect(result).toEqual({ ok: true })
@@ -77,7 +76,11 @@ describe('probeOpfs', () => {
     expect(calls).toContain('createWritable')
     expect(calls).toContain('write:opfs-probe')
     expect(calls).toContain('close')
-    expect(calls.some((call) => call.startsWith('removeEntry:.chronowhoop-opfs-probe-'))).toBe(true)
+
+    const createdName = calls.find((call) => call.startsWith('getFileHandle:'))?.split(':')[1]
+    const removedName = calls.find((call) => call.startsWith('removeEntry:'))?.split(':')[1]
+    expect(createdName).toMatch(/^\.chronowhoop-opfs-probe-/)
+    expect(removedName).toBe(createdName)
   })
 
   it('reports failure when getDirectory throws', async () => {
@@ -85,7 +88,6 @@ describe('probeOpfs', () => {
     const result = await probeOpfs(storage)
     expect(result).toEqual({
       ok: false,
-      reason: 'failed',
       message: 'getDirectory() failed: denied',
     })
   })
@@ -95,7 +97,6 @@ describe('probeOpfs', () => {
     const result = await probeOpfs(storage)
     expect(result).toEqual({
       ok: false,
-      reason: 'failed',
       message: 'OPFS write probe failed: quota',
     })
     expect(calls.some((call) => call.startsWith('removeEntry:'))).toBe(true)

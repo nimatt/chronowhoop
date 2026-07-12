@@ -67,6 +67,23 @@ describe('checkCapabilities', () => {
       detail: 'probe threw: boom',
     })
   })
+
+  it('fails a capability whose probe never settles, using the timeout', async () => {
+    const never = (): Promise<ProbeOutcome> => new Promise<ProbeOutcome>(() => {})
+    const report = await checkCapabilities({ ...allPass, webgpu: never }, 10)
+    expect(report.ok).toBe(false)
+    expect(findCapability(report.capabilities, 'webgpu')).toMatchObject({
+      ok: false,
+      detail: 'probe timed out',
+    })
+  })
+
+  it('marks every capability as required so the gate needs all four', async () => {
+    const report = await checkCapabilities(allPass)
+    for (const capability of report.capabilities) {
+      expect(capability.required).toBe(true)
+    }
+  })
 })
 
 describe('probeWebGpu', () => {
@@ -107,16 +124,6 @@ describe('probeWebGpu', () => {
     expect(await probeWebGpu(gpu)).toEqual({
       ok: false,
       detail: 'requestAdapter() returned no adapter',
-    })
-  })
-
-  it('fails when the adapter is ok but requestDevice returns no device', async () => {
-    const gpu: GpuLike = {
-      requestAdapter: async () => ({ requestDevice: async () => null }),
-    }
-    expect(await probeWebGpu(gpu)).toEqual({
-      ok: false,
-      detail: 'adapter found, but requestDevice() returned no device',
     })
   })
 

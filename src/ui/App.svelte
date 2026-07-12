@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { untrack } from 'svelte'
   import { checkCapabilities, type CapabilityReport } from '../core/capabilities/capabilities'
   import { routeFromHash, shouldShowUnsupportedScreen } from '../core/routing/route'
   import Home from './screens/Home.svelte'
@@ -7,10 +8,12 @@
   import Unsupported from './screens/Unsupported.svelte'
   import UpdateBanner from './UpdateBanner.svelte'
 
+  let { check = checkCapabilities }: { check?: () => Promise<CapabilityReport> } = $props()
+
   let route = $state(routeFromHash(location.hash))
   let report = $state<CapabilityReport | null>(null)
 
-  void checkCapabilities().then((result) => {
+  void untrack(() => check()).then((result) => {
     report = result
   })
 </script>

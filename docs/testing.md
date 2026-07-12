@@ -50,8 +50,8 @@ intended shape.
 - **Does not:** make crossing decisions (those are CPU/TS, covered by unit tests against
   synthetic strip-energy sequences) and does not prove any real phone's GPU agrees — that
   is what the on-device self-test is for.
-- **Where:** headless Chromium with software WebGPU (SwiftShader / `--enable-unsafe-swiftshader`)
-  in CI, since GitHub-hosted runners have no GPU; also locally.
+- **Where:** headless Chromium with software WebGPU (SwiftShader; the exact Chromium flags
+  live in `vitest.config.ts`) in CI, since GitHub-hosted runners have no GPU; also locally.
 - **Gating:** yes, once it exists. The Phase 1 spike (hello-world compute dispatch +
   `mapAsync` readback) exists to prove the software-WebGPU rig runs in CI at all — if it
   could not, the whole automated GPU strategy needed a different answer before any WGSL was
@@ -76,8 +76,11 @@ intended shape.
 
 - **Verifies:** the whole timing loop on a fixed input — annotated clip → WebCodecs decode →
   GPU reduction → crossing state machine → session layer → announcer, asserting detected laps,
-  their directions, durations (±1 frame, ±2 frame E2E per the fixture contract), discards, and
-  the exact announcement decisions. Deterministic replay makes this repeatable frame-for-frame.
+  their directions, durations, discards, and the exact announcement decisions. Detection accuracy
+  is ±1 frame (anchored in `docs/specs/product.md`); the roadmap sets a ±2-frame end-to-end
+  budget as a working target, pending the authoritative fixture-tolerance definition that lands
+  in `docs/specs/detection.md` (Phase 3/4). Deterministic replay makes this repeatable
+  frame-for-frame.
 - **Does not:** replace unit tests (a failure here does not localize the bug) and does not cover
   live-camera behavior — that is what the device spike and manual checklist measure.
 - **Where:** driven from tests over recorded fixtures; runs wherever the pipeline runs (CI where
