@@ -652,3 +652,36 @@ bottleneck. Added `src/core/cpu-pipeline/webcodecs-probe.ts` + the
   silently under backpressure; the probe's processed-rate vs granted-fps
   comparison is the drop detector. If Phase 3 adopts this route, dropped-frame
   accounting needs the frame-timestamp gaps, not presentedFrames.
+
+## ADR 0009 pivot — gate + seam (2026-07-12)
+
+Capability gate swapped `webgpu` → `webcodecs`; detection seam skeleton +
+lint seam added. Judgment calls:
+
+- **`defaultMediaStreamTrackProcessor()` lives in `src/core/detection/capture-support.ts`,
+  not `capabilities.ts`.** The lint seam bans the `MediaStreamTrackProcessor`
+  identifier outside the detection module, and detection.md says all
+  capture-API access lives inside the seam — so the gate's default global
+  lookup is exported from there, mirroring how `probeOpfs` lives in
+  `src/core/storage`. `probeWebCodecs` itself stays in `capabilities.ts` with
+  the injectable-default signature.
+- **Lint seam structure:** ESLint flat config *replaces* a rule's entry when a
+  later block matches the same file, so a second standalone
+  `no-restricted-syntax` block would have silently disabled the OPFS seam on
+  every overlapping file. Restructured into one combined block (both bans,
+  everywhere except test files) plus per-home override blocks that re-apply
+  only the other seam's bans (storage keeps the WebCodecs ban, detection +
+  cpu-pipeline keep the OPFS ban). Self-tests cover the cross cases.
+- **Selector choice:** a bare `Identifier[name="MediaStreamTrackProcessor"]`
+  covers plain use, new-expressions, dot member access, and destructuring in
+  one selector (it's a global constructor, unlike the OPFS *methods* which
+  need member-shaped selectors); computed-string access gets its own selector.
+  Dynamic/reflective access remains the same documented gap as OPFS.
+- **`probeWebCodecs` is a pure presence check** (`typeof ctor === 'function'`):
+  constructing a processor requires a live camera track, which the startup
+  gate must not request. The GPU-specific probe tests (compat adapter, device
+  destroy, Vulkan-flag hint) were deleted with `probeWebGpu`; the Linux-Chrome
+  Vulkan diagnosis now lives only in the /diag GpuPanel + runbook.
+- **`webgpu-spike.webgpu.test.ts`:** removed only the `probeWebGpu` assertion;
+  the compute spike and the `test:webgpu` CI leg stay as the GPU spike
+  instruments' canary per the pivot instructions.

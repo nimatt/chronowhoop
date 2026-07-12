@@ -1,5 +1,4 @@
 import { describe, expect, it } from 'vitest'
-import { probeWebGpu } from './capabilities/capabilities'
 
 // Hello-world WebGPU spike (Phase 1, item 9): prove the whole
 // adapter → device → compute dispatch → buffer readback path runs in TRUE
@@ -69,12 +68,5 @@ describe('WebGPU compute spike (SwiftShader-capable)', () => {
     expect(Array.from(result)).toEqual([2, 4, 6, 8, 10, 12, 14, 16])
 
     device.destroy()
-  })
-
-  // The shipping capability gate for the project's hard requirement must pass
-  // against a real (software) adapter, not only against fakes — mirroring
-  // opfs.browser.test.ts asserting probeOpfs() ok.
-  it('probeWebGpu succeeds against a real adapter', async () => {
-    expect(await probeWebGpu()).toEqual({ ok: true })
   })
 })

@@ -42,12 +42,12 @@ All data is JSON in the browser's origin-private file system — see `storage.md
 
 ## Platform requirements
 
-Phone-first (device propped beside the gate), desktop supported for both timing and review. Requires WebGPU, `getUserMedia`, OPFS, Web Speech synthesis. Supported platforms: Android Chrome (primary) and desktop Chromium. iOS Safari 26+ is best-effort — kept working when feasible, never gating (ADR 0006). Unsupported browsers get an explanatory error screen. Installable PWA; fully offline after first load.
+Phone-first (device propped beside the gate), desktop supported for both timing and review. Requires WebCodecs camera capture (`MediaStreamTrackProcessor`), `getUserMedia`, OPFS, Web Speech synthesis (ADR 0009 — WebGPU is no longer required). Supported platforms: Android Chrome (primary) and desktop Chromium. iOS Safari 26+ is best-effort — kept working when feasible, never gating (ADR 0006). Unsupported browsers get an explanatory error screen. Installable PWA; fully offline after first load.
 
 ## Non-goals (v1)
 
 - Multiple pilots / per-pilot records
 - racegow.com submission integration
-- CPU fallback detection pipeline
+- Alternative capture routes beyond WebCodecs (the detection-source seam exists; a canvas-based iOS fallback is a candidate, not a v1 goal — ADR 0009)
 - Cloud sync (storage interface is the seam)
 - Per-crossing video capture (frame ring buffer is the seam)

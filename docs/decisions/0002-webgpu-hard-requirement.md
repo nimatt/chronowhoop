@@ -1,6 +1,6 @@
 # 0002 — WebGPU is a hard requirement, no fallback pipeline
 
-**Status:** accepted, 2026-07-12
+**Status:** superseded by [0009](0009-cpu-pipeline-webcodecs.md), 2026-07-12 (accepted 2026-07-12)
 
 ## Context
 

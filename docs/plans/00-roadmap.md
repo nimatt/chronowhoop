@@ -4,6 +4,8 @@ Seven phases, riskiest-first. Every phase ends with something demoable on a real
 
 > **ADR 0006 (post-roundtable):** iOS is best-effort, not a gating platform. Android Chrome + desktop Chromium gate every phase; wherever this roadmap or a phase doc says "both phones"/"both platforms", read "Android required; iOS additionally if a device is available". iOS failures produce documentation, not pivots.
 
+> **ADR 0009 (post-Phase-2 spike):** the required target device (S22/Xclipse) has no stock WebGPU; the reduction stage is CPU over WebCodecs capture, superseding ADR 0002. Wherever Phases 3–7 say WGSL/GPU/readback/device-loss/"GPU CI leg", read the CPU-pipeline equivalent per each phase doc's ADR 0009 amendment; the GPU-golden CI rig is retired in favor of plain node determinism tests. Phase 3's doc is rewritten; 4–7 carry amendment preambles.
+
 ## Phase list
 
 | # | Phase | One-line goal |

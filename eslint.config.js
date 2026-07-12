@@ -43,6 +43,38 @@ const opfsRestrictedSyntax = opfsMethods.flatMap((method) => [
   },
 ])
 
+// WebCodecs capture surface that must stay behind the detection module (ADR
+// 0009): the rest of the app consumes FrameSamples, never the capture API. The
+// cpu-pipeline spike (the /diag probes) keeps direct access as a diagnostic
+// instrument.
+const webCodecsCaptureApis = ['MediaStreamTrackProcessor']
+
+const webCodecsSeamMessage = (api) =>
+  `WebCodecs capture (${api}) is only allowed inside src/core/detection/** ` +
+  `(and the src/core/cpu-pipeline/** diag spike) — consume FrameSamples from the detection module.`
+
+// A bare Identifier selector catches every static reach for a global
+// constructor in one rule: plain use (`typeof MediaStreamTrackProcessor`),
+// new-expressions, dot member access (`globalThis.MediaStreamTrackProcessor`),
+// and destructuring keys. Computed-string access needs its own selector. Same
+// deliberate gaps as the OPFS seam: dynamic/reflective access is out of scope.
+const webCodecsRestrictedSyntax = webCodecsCaptureApis.flatMap((api) => [
+  {
+    selector: `Identifier[name="${api}"]`,
+    message: webCodecsSeamMessage(api),
+  },
+  {
+    selector: `MemberExpression[computed=true][property.value="${api}"]`,
+    message: webCodecsSeamMessage(api),
+  },
+])
+
+// Test files may touch either seam's APIs directly: unit (`*.test.ts`) and the
+// browser-mode rigs (`*.browser.test.ts`, `*.webgpu.test.ts`) are all
+// allowlisted. The browser globs are redundant with `**/*.test.ts` today but
+// kept explicit so the allowed surface stays reviewed rather than incidental.
+const seamTestFileIgnores = ['**/*.test.ts', '**/*.browser.test.ts', '**/*.webgpu.test.ts']
+
 export default tseslint.config(
   { ignores: ['dist/', 'node_modules/'] },
   js.configs.recommended,
@@ -88,20 +120,31 @@ export default tseslint.config(
       ],
     },
   },
+  // Flat config REPLACES a rule's entry when a later block matches the same
+  // file (no merging), so the two seams cannot be independent
+  // `no-restricted-syntax` blocks. Instead: one block bans both API surfaces
+  // everywhere, and each seam's home directory then re-applies only the OTHER
+  // seam's bans. The lint-seams self-test covers the cross cases.
   {
-    name: 'seam/opfs-only-in-core-storage',
+    name: 'seam/opfs-and-webcodecs-restricted',
     files: ['**/*.ts', '**/*.js', '**/*.svelte'],
-    // OPFS APIs live only in the storage module. Test files may touch them
-    // directly to exercise real OPFS: unit (`*.test.ts`) and the browser-mode
-    // rigs (`*.browser.test.ts`, `*.webgpu.test.ts`) are all allowlisted. The
-    // browser globs are redundant with `**/*.test.ts` today but kept explicit
-    // so the allowed surface stays reviewed rather than incidental.
-    ignores: [
-      'src/core/storage/**',
-      '**/*.test.ts',
-      '**/*.browser.test.ts',
-      '**/*.webgpu.test.ts',
-    ],
+    ignores: seamTestFileIgnores,
+    rules: {
+      'no-restricted-syntax': ['error', ...opfsRestrictedSyntax, ...webCodecsRestrictedSyntax],
+    },
+  },
+  {
+    name: 'seam/opfs-allowed-in-core-storage',
+    files: ['src/core/storage/**'],
+    ignores: seamTestFileIgnores,
+    rules: {
+      'no-restricted-syntax': ['error', ...webCodecsRestrictedSyntax],
+    },
+  },
+  {
+    name: 'seam/webcodecs-allowed-in-detection',
+    files: ['src/core/detection/**', 'src/core/cpu-pipeline/**'],
+    ignores: seamTestFileIgnores,
     rules: {
       'no-restricted-syntax': ['error', ...opfsRestrictedSyntax],
     },

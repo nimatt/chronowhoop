@@ -1,5 +1,7 @@
 # Phase 4 — Crossing detection: state machine, session semantics, test mode at the gate
 
+> **ADR 0009 amendment (2026-07-12):** read GPU/WGSL references as the CPU reduction stage. The "EMA-pause feedback contract" (item 3) is no longer a CPU→GPU uniform with readback-ring latency — it is a direct parameter on the same-thread reducer, so the pause lands on the *next* frame; the max-pause timeout and hover/crash framing stay, the 2–3-frame-latency analysis is obsolete. "GPU-over-clips" in items 5/8 reads "reducer-over-clips" and runs in plain node. Global-transient rejection remains mandatory (S22 auto-control lockability unmeasured). Corpus-dependent items (5, 8, 10) and the field session remain gated on field work — pure-TS items proceed without them.
+
 ## Goal
 
 The crossing state machine is precisely specified (written back into `detection.md`), implemented as pure TS, and validated against the tiered corpus: 100% of must-pass crossings detected with correct direction and timestamp, zero false positives on must-pass noise; known-limitation clips behave as the spec's mitigation story documents. Standing at the real gate, test mode beeps on every correct-direction hand-wave or fly-through and stays silent otherwise.

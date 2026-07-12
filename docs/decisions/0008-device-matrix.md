@@ -14,14 +14,14 @@ Fill TBD slots during the on-device session; then flip status to accepted.
 
 | Decision | Outcome | Feeds |
 |---|---|---|
-| Texture-import path | TBD | Phase 3 import pass |
-| Timestamp source of truth + fallback | TBD | Phase 3/4 capture timestamps |
+| Texture-import path | Moot — no WebGPU on the target device ([0009](0009-cpu-pipeline-webcodecs.md)) | — |
+| Timestamp source of truth + fallback | Expected: `VideoFrame.timestamp` (capture timestamp by construction, [0009](0009-cpu-pipeline-webcodecs.md)); on-device jitter measurement still owed | Phase 3/4 capture timestamps |
 | Camera auto-control lockability consequence | TBD — if any control not lockable, global-transient rejection is mandatory | Phase 4 detector scope |
 | Speech queue policy input | TBD — cancel-and-replace vs skip-stale-enqueue-next chosen from the matrix below | Phase 5 announcer |
 | Atomic-write evidence | TBD — cited by the Phase 6 atomic-write ADR | Phase 6 storage |
 | Device-loss facts | TBD | Phase 3 recreation path, Phase 5 interruption handling |
 | iOS OPFS partitioning posture | **Decided now (default, no device): export/import is the migration path.** Phase 6 ships working export regardless. | Phase 6/7 |
-| Pipeline compute substrate (WebGPU vs CPU) | TBD — S22 (required device) has no stock WebGPU adapter, core or compat; decided by the CPU-pipeline probe section below, then recorded as a new ADR superseding [0002](0002-webgpu-hard-requirement.md) if the CPU path passes | Phase 3 pipeline, capability gate |
+| Pipeline compute substrate (WebGPU vs CPU) | **Decided ([0009](0009-cpu-pipeline-webcodecs.md)): CPU over WebCodecs capture.** WebCodecs route measured 30 proc/s, full-frame total median 14.1 ms / rolling 17.6 ms — misses the ½-interval budget full-frame, accepted with the ROI-crop mitigation and 30 fps floor; Phase 3 re-measures ROI-cropped on device | Phase 3 pipeline, capability gate |
 
 ## Go/no-go thresholds (normative — declared before measurement)
 

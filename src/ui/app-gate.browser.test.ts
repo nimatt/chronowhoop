@@ -6,7 +6,12 @@ import type { CapabilityReport } from '../core/capabilities/capabilities'
 const failingReport: CapabilityReport = {
   ok: false,
   capabilities: [
-    { name: 'webgpu', label: 'WebGPU', ok: false, detail: 'navigator.gpu is not available' },
+    {
+      name: 'webcodecs',
+      label: 'WebCodecs capture (MediaStreamTrackProcessor)',
+      ok: false,
+      detail: 'MediaStreamTrackProcessor is not available',
+    },
     { name: 'camera', label: 'Camera (getUserMedia)', ok: true },
     { name: 'opfs', label: 'Local storage (OPFS)', ok: true },
     { name: 'speech', label: 'Speech synthesis', ok: true },
@@ -16,7 +21,7 @@ const failingReport: CapabilityReport = {
 const passingReport: CapabilityReport = {
   ok: true,
   capabilities: failingReport.capabilities.map((capability) =>
-    capability.name === 'webgpu' ? { ...capability, ok: true, detail: undefined } : capability,
+    capability.name === 'webcodecs' ? { ...capability, ok: true, detail: undefined } : capability,
   ),
 }
 
@@ -81,7 +86,7 @@ describe('App capability gate wiring', () => {
     mountApp(resolved(failingReport))
 
     await waitForText("ChronoWhoop can't run in this browser")
-    expect(text()).toContain('WebGPU')
+    expect(text()).toContain('WebCodecs capture (MediaStreamTrackProcessor)')
     expect(text()).toContain('FAIL')
     expect(text()).toContain('Open diagnostics')
 

@@ -1,8 +1,9 @@
+import { defaultMediaStreamTrackProcessor } from '../detection/capture-support'
 import { probeOpfs } from '../storage/opfs-probe'
 
 export type ProbeOutcome = { ok: true } | { ok: false; detail: string }
 
-export type CapabilityName = 'webgpu' | 'camera' | 'opfs' | 'speech'
+export type CapabilityName = 'webcodecs' | 'camera' | 'opfs' | 'speech'
 
 export interface CapabilityResult {
   name: CapabilityName
@@ -16,55 +17,15 @@ export interface CapabilityReport {
   capabilities: CapabilityResult[]
 }
 
-interface GpuDeviceLike {
-  destroy?(): void
-}
-
-export interface GpuAdapterLike {
-  requestDevice(): Promise<GpuDeviceLike>
-}
-
-export interface GpuLike {
-  requestAdapter(options?: { featureLevel?: string }): Promise<GpuAdapterLike | null>
-}
-
-function defaultGpu(): GpuLike | undefined {
-  const global = globalThis as { navigator?: { gpu?: GpuLike } }
-  return global.navigator?.gpu
-}
-
-// The pipeline needs a core adapter; a compatibility-mode (GLES) adapter is
-// probed only to sharpen the failure message: core-null with compat-present is
-// the signature of Chrome on Linux with Vulkan disabled (see
-// docs/runbooks/linux-chrome-webgpu.md).
-async function hasCompatibilityAdapter(gpu: GpuLike): Promise<boolean> {
-  try {
-    return (await gpu.requestAdapter({ featureLevel: 'compatibility' })) !== null
-  } catch {
-    return false
+// Presence check only: constructing a processor needs a live camera track,
+// which the gate must not request. The parameter is the constructor value
+// itself (structurally `unknown`) so tests inject fakes.
+export async function probeWebCodecs(
+  trackProcessor: unknown = defaultMediaStreamTrackProcessor(),
+): Promise<ProbeOutcome> {
+  if (typeof trackProcessor !== 'function') {
+    return { ok: false, detail: 'MediaStreamTrackProcessor is not available' }
   }
-}
-
-export async function probeWebGpu(gpu: GpuLike | undefined = defaultGpu()): Promise<ProbeOutcome> {
-  if (typeof gpu?.requestAdapter !== 'function') {
-    return { ok: false, detail: 'navigator.gpu is not available' }
-  }
-  const adapter = await gpu.requestAdapter()
-  if (!adapter) {
-    return (await hasCompatibilityAdapter(gpu))
-      ? {
-          ok: false,
-          detail:
-            'no core WebGPU adapter, but a compatibility adapter exists — ' +
-            'on Chrome for Linux this usually means Vulkan is disabled; ' +
-            'enable chrome://flags/#enable-vulkan and relaunch',
-        }
-      : { ok: false, detail: 'requestAdapter() returned no adapter' }
-  }
-  // Requests default limits for now; Phase 3 revisits requested limits once
-  // the detection pipeline's actual needs (buffer sizes, workgroup limits) are known.
-  const device = await adapter.requestDevice()
-  device.destroy?.()
   return { ok: true }
 }
 
@@ -101,29 +62,29 @@ async function probeOpfsCapability(): Promise<ProbeOutcome> {
 }
 
 export interface CapabilityProbes {
-  webgpu(): Promise<ProbeOutcome>
+  webcodecs(): Promise<ProbeOutcome>
   camera(): Promise<ProbeOutcome>
   opfs(): Promise<ProbeOutcome>
   speech(): Promise<ProbeOutcome>
 }
 
 // Every capability is a hard requirement: product.md's "Platform requirements"
-// and ADR 0002 gate startup on all four.
+// and ADR 0009 gate startup on all four.
 const capabilityLabels: Record<CapabilityName, string> = {
-  webgpu: 'WebGPU',
+  webcodecs: 'WebCodecs capture (MediaStreamTrackProcessor)',
   camera: 'Camera (getUserMedia)',
   opfs: 'Local storage (OPFS)',
   speech: 'Speech synthesis',
 }
 
 const defaultProbes: CapabilityProbes = {
-  webgpu: () => probeWebGpu(),
+  webcodecs: () => probeWebCodecs(),
   camera: () => probeCamera(),
   opfs: probeOpfsCapability,
   speech: () => probeSpeech(),
 }
 
-// A hung probe (a `requestAdapter()`/`getDirectory()` that never settles) would
+// A hung probe (a `getDirectory()` that never settles) would
 // otherwise leave the report null forever, stranding the app on its loading
 // state. Bound every probe so the gate always resolves.
 export const DEFAULT_PROBE_TIMEOUT_MS = 8000
@@ -160,7 +121,7 @@ export async function checkCapabilities(
 ): Promise<CapabilityReport> {
   const merged = { ...defaultProbes, ...probes }
   const capabilities = await Promise.all([
-    runProbe('webgpu', merged.webgpu, timeoutMs),
+    runProbe('webcodecs', merged.webcodecs, timeoutMs),
     runProbe('camera', merged.camera, timeoutMs),
     runProbe('opfs', merged.opfs, timeoutMs),
     runProbe('speech', merged.speech, timeoutMs),

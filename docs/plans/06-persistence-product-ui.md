@@ -1,5 +1,7 @@
 # Phase 6 — Persistence and product UI: storage seam for real, courses, calibration, review
 
+> **ADR 0009 amendment (2026-07-12):** unaffected in substance. Two evidence notes: the atomic-write ADR (item 3) cannot yet cite on-device S22 measurements (the OPFS `/diag` probes exist but haven't been run on the phone) — write it against Chromium semantics + the real-browser crash tests, mark the device citation as owed; the iOS install-before-data banner (item 6) is skipped per ADR 0006/0008 (no device; export is the migration path).
+
 ## Goal
 
 The v1 product flows exist and data is durable: create courses, fly persisted sessions that survive a mid-session tab kill (losing at most the last lap), calibrate through a productized setup screen prefilled from the course's latest session, review sessions and all-time course records — and **export works**, because from this phase on real data exists that origin-scoped storage can silently lose. The schema contract (including the export envelope) is frozen before the first real byte is written.

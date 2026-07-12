@@ -2,21 +2,22 @@
 
 Camera side-on to the gate; user crops a region of interest (ROI) around the gate opening. Goal: detect the moment a tiny whoop crosses the gate plane, with direction, at ±1 camera frame accuracy.
 
-## Capture
+## Capture (ADR 0009)
 
-- `getUserMedia`, rear camera preferred on phones; request 60 fps, accept what the device gives.
-- Frames enter WebGPU as external textures. Only the ROI is processed, downscaled to a fixed working resolution (target ~256 px wide) so cost is independent of camera resolution.
-- Each processed frame is timestamped with the frame's capture time (`requestVideoFrameCallback` metadata where available); lap boundaries use these timestamps, not processing-completion time.
+- `getUserMedia`, rear camera preferred on phones; request 60 fps, accept what the device gives (auto-exposure may halve delivered rate in low light — accuracy follows the delivered rate).
+- Frames arrive as WebCodecs `VideoFrame`s via `MediaStreamTrackProcessor` — no video element, no canvas in the capture path. Only the ROI is copied out (`copyTo` with a crop rect), and the Y plane is read directly as luminance for the planar formats Android cameras deliver (NV12/I420), stride-subsampled to a fixed working resolution (target ~256 px wide) so cost is independent of camera resolution.
+- Each processed frame is timestamped with `VideoFrame.timestamp` — a capture timestamp by construction; lap boundaries use these timestamps, not processing-completion time.
+- All capture-API use lives inside the detection module (`src/core/detection/`, lint-enforced seam); the rest of the app consumes `FrameSample`s only.
 
-## GPU stage (WGSL, per frame)
+## Reduction stage (CPU, per frame)
 
-1. Convert ROI to luminance.
+1. Subsampled ROI luminance (from the Y plane; packed-RGB formats convert during subsampling).
 2. Diff against a background model: exponential moving average of past luminance frames. The EMA updates slowly, and updating is paused while a crossing is in progress so the drone doesn't get absorbed into the background.
 3. Threshold the absolute difference into a binary motion mask.
-4. Divide the ROI into **N vertical strips** (default 12) along the travel axis; reduce the mask to one motion-energy value per strip.
-5. Read back the N-value buffer to the CPU. This tiny readback per frame is the entire GPU→CPU interface.
+4. Divide the ROI into **N vertical strips** (default 12) along the travel axis; reduce the mask to one motion-energy value (hot-pixel count) per strip.
+5. Emit one `FrameSample` `{ captureTimeMs, energies }` per frame. This tiny per-frame record is the entire pipeline→state-machine interface.
 
-The GPU makes no decisions — it only reduces frames to strip energies.
+The reduction makes no decisions — it only reduces frames to strip energies. It is pure TypeScript, so golden tests, replay, and the full detection loop run deterministically in node.
 
 ## CPU stage (TypeScript state machine)
 

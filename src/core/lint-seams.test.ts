@@ -113,3 +113,41 @@ describe('seam/opfs-only-in-core-storage', () => {
     await expectNoSeamError("const name = 'getDirectory'\nhandle[name]()", 'src/ui/a.ts')
   })
 })
+
+describe('seam/webcodecs-capture-only-in-detection', () => {
+  const forms = {
+    'new-expression': 'export const p = new MediaStreamTrackProcessor({ track: t })',
+    'plain identifier (typeof)': "export const ok = typeof MediaStreamTrackProcessor === 'function'",
+    'member access': 'export const ctor = globalThis.MediaStreamTrackProcessor',
+    'computed-string access': "export const ctor = globalThis['MediaStreamTrackProcessor']",
+    destructure: 'const { MediaStreamTrackProcessor } = globalThis\nexport { MediaStreamTrackProcessor }',
+  }
+
+  for (const [formName, code] of Object.entries(forms)) {
+    test(`UI-file MediaStreamTrackProcessor via ${formName} errors`, async () => {
+      await expectSeamError(code, 'src/ui/a.ts', 'no-restricted-syntax')
+    })
+  }
+
+  test('same code inside src/core/detection passes', async () => {
+    await expectNoSeamError(forms['member access'], 'src/core/detection/a.ts')
+  })
+
+  test('same code inside src/core/cpu-pipeline (diag spike) passes', async () => {
+    await expectNoSeamError(forms['new-expression'], 'src/core/cpu-pipeline/a.ts')
+  })
+
+  test('usage in a unit test file passes', async () => {
+    await expectNoSeamError(forms['member access'], 'src/ui/a.test.ts')
+  })
+
+  test('usage in src/core/storage errors (the storage override keeps this seam)', async () => {
+    // Guards the flat-config override scheme: the storage block replaces the
+    // combined rule, so it must re-apply the WebCodecs ban.
+    await expectSeamError(forms['member access'], 'src/core/storage/a.ts', 'no-restricted-syntax')
+  })
+
+  test('OPFS use in src/core/detection errors (the detection override keeps that seam)', async () => {
+    await expectSeamError('handle.getDirectory()', 'src/core/detection/a.ts', 'no-restricted-syntax')
+  })
+})

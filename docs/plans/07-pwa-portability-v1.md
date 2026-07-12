@@ -1,5 +1,7 @@
 # Phase 7 — PWA offline, import, hardening: v1 ships
 
+> **ADR 0009 amendment (2026-07-12):** "GPU self-test" reads the `/lab` pipeline self-test (CPU); "GPU golden" CI legs read the node determinism suite; E2E replay uses `ClipSource` (raw luma clips), not `VideoFileSource`/WebCodecs-decode, and lap expectations are exact (no GPU float tolerance). Device-matrix (10) and field acceptance (11) remain manual field items.
+
 ## Goal
 
 Install to the home screen, airplane-mode the phone in a basement, run a full session, export via the share sheet, import on desktop and see merged data with add/skip counts on a desktop-worthy layout. Device-matrix and field acceptance pass. This is v1 as specced.

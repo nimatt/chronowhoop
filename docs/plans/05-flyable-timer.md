@@ -1,5 +1,7 @@
 # Phase 5 — Flyable timer: armed sessions, speech, wake lock (no persistence)
 
+> **ADR 0009 amendment (2026-07-12):** GPU device loss no longer exists; interruption handling (item 6) covers page-hide/track-end/camera-error paths instead — a dead capture stream must never leave a running clock silently. The full-loop CI test (item 8) has no GPU leg: the clip variant and the strip-energy-JSON variant both run in plain node. The speech queue policy (item 3) lacks Phase 2 device evidence (speech probes not yet run on the S22): choose skip-stale-enqueue-next as the conservative default, note the assumption, and revisit after a device session. Soak (9) and field acceptance (10) remain field items.
+
 ## Goal
 
 Actually practice with it: arm, fly, hear "fourteen three" / "best fourteen one" / "best three" every lap, discard a bad lap after a crash, stop, and read the session's lap table on screen. Data evaporates on reload — by design. This is the earliest moment the app gets real use at the track, the real-world validation of the whole product loop before storage or product-UI investment — and the moment the full arm/lap/discard/announce loop comes under CI, so later phases can't regress it undetected.
