@@ -7,7 +7,6 @@ export type CapabilityName = 'webgpu' | 'camera' | 'opfs' | 'speech'
 export interface CapabilityResult {
   name: CapabilityName
   label: string
-  required: boolean
   ok: boolean
   detail?: string
 }
@@ -88,15 +87,13 @@ export interface CapabilityProbes {
   speech(): Promise<ProbeOutcome>
 }
 
-// Every capability is currently a hard requirement — product.md's "Platform
-// requirements" and ADR 0002 gate startup on all four. The `required` flag makes
-// that policy explicit (and gives a seam for graceful degradation later) rather
-// than baking "all-or-nothing" into the gate computation.
-const capabilityMeta: Record<CapabilityName, { label: string; required: boolean }> = {
-  webgpu: { label: 'WebGPU', required: true },
-  camera: { label: 'Camera (getUserMedia)', required: true },
-  opfs: { label: 'Local storage (OPFS)', required: true },
-  speech: { label: 'Speech synthesis', required: true },
+// Every capability is a hard requirement: product.md's "Platform requirements"
+// and ADR 0002 gate startup on all four.
+const capabilityLabels: Record<CapabilityName, string> = {
+  webgpu: 'WebGPU',
+  camera: 'Camera (getUserMedia)',
+  opfs: 'Local storage (OPFS)',
+  speech: 'Speech synthesis',
 }
 
 const defaultProbes: CapabilityProbes = {
@@ -124,17 +121,17 @@ async function runProbe(
   probe: () => Promise<ProbeOutcome>,
   timeoutMs: number,
 ): Promise<CapabilityResult> {
-  const { label, required } = capabilityMeta[name]
+  const label = capabilityLabels[name]
   let outcome: ProbeOutcome
   try {
     outcome = await withTimeout(probe(), timeoutMs)
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error)
-    return { name, label, required, ok: false, detail: `probe threw: ${message}` }
+    return { name, label, ok: false, detail: `probe threw: ${message}` }
   }
   return outcome.ok
-    ? { name, label, required, ok: true }
-    : { name, label, required, ok: false, detail: outcome.detail }
+    ? { name, label, ok: true }
+    : { name, label, ok: false, detail: outcome.detail }
 }
 
 export async function checkCapabilities(
@@ -148,6 +145,6 @@ export async function checkCapabilities(
     runProbe('opfs', merged.opfs, timeoutMs),
     runProbe('speech', merged.speech, timeoutMs),
   ])
-  const ok = capabilities.filter((capability) => capability.required).every((capability) => capability.ok)
+  const ok = capabilities.every((capability) => capability.ok)
   return { ok, capabilities }
 }

@@ -1,5 +1,4 @@
 <script lang="ts">
-  import { untrack } from 'svelte'
   import { checkCapabilities, type CapabilityReport } from '../core/capabilities/capabilities'
   import { routeFromHash, shouldShowUnsupportedScreen } from '../core/routing/route'
   import Home from './screens/Home.svelte'
@@ -13,7 +12,8 @@
   let route = $state(routeFromHash(location.hash))
   let report = $state<CapabilityReport | null>(null)
 
-  void untrack(() => check()).then((result) => {
+  // svelte-ignore state_referenced_locally
+  void check().then((result) => {
     report = result
   })
 </script>

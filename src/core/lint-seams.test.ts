@@ -84,6 +84,14 @@ describe('seam/opfs-only-in-core-storage', () => {
     await expectNoSeamError('handle.getDirectory(); handle.createWritable()', 'src/ui/a.test.ts')
   })
 
+  test('OPFS code in a .svelte component script errors (svelte files stay covered)', async () => {
+    await expectSeamError(
+      '<script lang="ts">\n  void navigator.storage.getDirectory()\n</script>',
+      'src/ui/A.svelte',
+      'no-restricted-syntax',
+    )
+  })
+
   test('OPFS code in a browser-mode test file passes', async () => {
     await expectNoSeamError('navigator.storage.getDirectory()', 'src/core/storage/a.browser.test.ts')
   })

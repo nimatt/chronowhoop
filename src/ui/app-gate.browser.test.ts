@@ -6,10 +6,10 @@ import type { CapabilityReport } from '../core/capabilities/capabilities'
 const failingReport: CapabilityReport = {
   ok: false,
   capabilities: [
-    { name: 'webgpu', label: 'WebGPU', required: true, ok: false, detail: 'navigator.gpu is not available' },
-    { name: 'camera', label: 'Camera (getUserMedia)', required: true, ok: true },
-    { name: 'opfs', label: 'Local storage (OPFS)', required: true, ok: true },
-    { name: 'speech', label: 'Speech synthesis', required: true, ok: true },
+    { name: 'webgpu', label: 'WebGPU', ok: false, detail: 'navigator.gpu is not available' },
+    { name: 'camera', label: 'Camera (getUserMedia)', ok: true },
+    { name: 'opfs', label: 'Local storage (OPFS)', ok: true },
+    { name: 'speech', label: 'Speech synthesis', ok: true },
   ],
 }
 

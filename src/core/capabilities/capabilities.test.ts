@@ -77,13 +77,6 @@ describe('checkCapabilities', () => {
       detail: 'probe timed out',
     })
   })
-
-  it('marks every capability as required so the gate needs all four', async () => {
-    const report = await checkCapabilities(allPass)
-    for (const capability of report.capabilities) {
-      expect(capability.required).toBe(true)
-    }
-  })
 })
 
 describe('probeWebGpu', () => {

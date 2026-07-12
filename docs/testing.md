@@ -28,12 +28,13 @@ intended shape.
 
 ## Browser-contract
 
-- **Verifies:** real browser-API behavior that jsdom cannot fake — today the OPFS
-  read/write spike, and in Phase 6 the full storage contract suite (crash-simulation,
-  quarantine, the never-block guarantee) run against both `MemoryStorage` and
-  `OpfsStorage`.
-- **Does not:** exercise the GPU pipeline (that is GPU-golden) or assert product
-  end-to-end flows (that is video-E2E). It pins down one platform API at a time.
+- **Verifies:** behavior that needs a real browser — platform APIs jsdom cannot fake
+  (today the OPFS read/write spike; in Phase 6 the full storage contract suite —
+  crash-simulation, quarantine, the never-block guarantee — against both `MemoryStorage`
+  and `OpfsStorage`) and component/UI wiring that needs a real DOM (today the App
+  capability-gate test, mounting the real `App.svelte`).
+- **Does not:** exercise the GPU pipeline (that is GPU-golden) or assert full product
+  flows over recorded video (that is video-E2E).
 - **Where:** real browsers via Vitest browser mode with the Playwright provider —
   **Chromium** (gating) and **WebKit** (informational, per [ADR 0006](decisions/0006-ios-best-effort.md):
   cheap to run, kept green when it is free, never blocks a merge). Locally and in CI.
