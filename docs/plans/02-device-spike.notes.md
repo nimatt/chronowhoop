@@ -598,3 +598,31 @@ calls:
   `Roi` (was ReadbackPanel-private arithmetic) and unit-tested in
   `luminance-pass.test.ts`: centering, odd-remainder flooring, and
   origin-clamping for zero/unknown or too-small dimensions.
+
+## Phase 2b — CPU-pipeline probe (2026-07-12, post-session addition)
+
+Added after the S22 finding (required device; no stock WebGPU adapter, core or
+compat — see ADR 0008 "WebGPU availability"). New: `src/core/cpu-pipeline/`
+(StripReducer + CpuPipelineProbe) and the `/diag` "CPU pipeline" panel.
+
+- **Assumption:** luminance uses the same Rec. 709 coefficients as the GPU
+  spike's luminance pass, so CPU and GPU numbers stay comparable while both
+  instruments exist.
+- **Assumption:** hot-pixel test is strictly greater-than the threshold
+  (diff == threshold is not hot), pinned by a unit test — whichever way Phase 4
+  wants it, the boundary is now explicit.
+- **Assumption:** declared CPU budget is ½ frame interval (median AND p95 of
+  the full downscale+readback+reduce cost) — the reduction shares the main
+  thread with the state machine, UI, and speech, unlike the GPU path whose
+  budget was a full interval of largely-parallel work.
+- **Assumption:** `willReadFrequently` is a run option, not a constant —
+  Chromium backs the canvas with CPU (cheap getImageData, CPU drawImage) or
+  GPU (GPU drawImage, sync readback) depending on the hint, and which wins on
+  the S22 is exactly what the probe must measure.
+- **Assumption:** the probe reuses `computeLatencyStats`/`computeDrift` from
+  `src/core/gpu/readback-stats.ts` rather than duplicating them; if the CPU
+  pivot is adopted and the gpu spike modules are retired, the stats file moves
+  out of `gpu/` then (same deferred-move logic as the ClockLike follow-up).
+- **Open question:** if the canvas path misses the budget, `VideoFrame.copyTo`
+  (WebCodecs) is the next candidate readback (async, canvas-free) before
+  falling back to WebGL2 fragment passes — not built into the probe yet.

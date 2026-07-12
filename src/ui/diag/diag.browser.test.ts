@@ -38,6 +38,7 @@ describe('Diag screen panels', () => {
       'GPU device',
       'Texture import',
       'Readback benchmark',
+      'CPU pipeline',
       'Speech',
       'Storage (OPFS)',
       'Wake lock',

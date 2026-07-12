@@ -8,6 +8,8 @@ Phase 2 ([plan](../plans/02-device-spike.md)) proves every un-mockable platform 
 
 Fill TBD slots during the on-device session; then flip status to accepted.
 
+**First session result (2026-07-12): the target device has no stock WebGPU** — see "WebGPU availability" below. The pivot ladder's final rung (ADR 0002 revision) is engaged; the GPU-dependent sections below stay TBD pending the CPU-pipeline probe's numbers and the resulting architecture decision.
+
 ## Decisions
 
 | Decision | Outcome | Feeds |
@@ -19,6 +21,7 @@ Fill TBD slots during the on-device session; then flip status to accepted.
 | Atomic-write evidence | TBD — cited by the Phase 6 atomic-write ADR | Phase 6 storage |
 | Device-loss facts | TBD | Phase 3 recreation path, Phase 5 interruption handling |
 | iOS OPFS partitioning posture | **Decided now (default, no device): export/import is the migration path.** Phase 6 ships working export regardless. | Phase 6/7 |
+| Pipeline compute substrate (WebGPU vs CPU) | TBD — S22 (required device) has no stock WebGPU adapter, core or compat; decided by the CPU-pipeline probe section below, then recorded as a new ADR superseding [0002](0002-webgpu-hard-requirement.md) if the CPU path passes | Phase 3 pipeline, capability gate |
 
 ## Go/no-go thresholds (normative — declared before measurement)
 
@@ -35,12 +38,27 @@ Copied verbatim from the [plan](../plans/02-device-spike.md):
 
 | Field | Value |
 |---|---|
-| Device model | TBD |
-| Android version | TBD |
-| Chrome version | TBD |
+| Device model | Samsung Galaxy S22 (Exynos 2200, **Xclipse 920** GPU — European variant) |
+| Android version | 16 |
+| Chrome version | 150 |
 | Screen (resolution, refresh) | TBD |
 | Build id measured against | TBD |
-| Measurement date | TBD |
+| Measurement date | 2026-07-12 (WebGPU availability only; remaining panels TBD) |
+
+**This device is a hard requirement** (user decision, 2026-07-12) — it cannot be swapped for a Qualcomm/Mali phone, so its WebGPU posture constrains the architecture rather than the device list.
+
+## WebGPU availability (measured 2026-07-12)
+
+| Probe | Result |
+|---|---|
+| `chrome://gpu` feature status | "WebGPU: Hardware accelerated", Vulkan enabled — **misleading**; see below |
+| Core adapter, stock Chrome (`requestAdapter()`) | **null** |
+| Compatibility adapter, stock Chrome (`requestAdapter({ featureLevel: 'compatibility' })`) | **null** (both via the `/diag` capability probe and webgpureport.org) |
+| Software fallback adapter | not supported (normal on Android) |
+| With `chrome://flags/#enable-unsafe-webgpu` | adapter available — blocklist-gated, **rejected as a basis for the product** (capability gate assumes stock Chrome) |
+| Samsung Internet, stock | no adapter |
+
+Consequence: the pre-declared pivot ladder's final rung — **ADR 0002 revision** — is engaged. The candidate replacement is a CPU pipeline (probe below); WebGL2 fragment-pass reduction is the fallback candidate if the CPU numbers miss. Waiting for Chromium to enable Xclipse is not a plan for a required device (timeline unknown; track upstream anyway).
 
 ## Camera
 
@@ -116,6 +134,24 @@ Two runs: **full-frame** (the deliberately-crude single-workgroup reduction, whi
 Caveats: measured latency is submit → CPU-visible, bundling GPU execution + Dawn IPC + main-thread task scheduling — a borderline miss cannot be attributed from the number alone; rerun with the readback panel's **Half rate** control (the harness processes every 2nd frame-loop tick, halving GPU/readback load while rVFC delivery is untouched; its reported tick rate is the processed rate, ~½ the camera rate) to disambiguate before applying the pivot ladder. Do not hide the preview to shed load — rVFC is the tick source, and hiding the element can stop frame delivery instead of isolating scheduling. The sustain records a rolling tick rate alongside latency because thermal throttling can drop granted fps mid-run while latency *looks* better — end-of-run fps must be transcribed next to the latency numbers.
 
 **Go/no-go vs threshold:** TBD.
+
+## CPU-pipeline probe (added 2026-07-12, after the WebGPU availability finding)
+
+WebGPU-free candidate: rVFC tick → `drawImage` downscale to ~256 px working width → `getImageData` → luminance/EMA-diff/threshold/strip-sum in TypeScript (`/diag` "CPU pipeline" panel). Run twice: `willReadFrequently` **on** (CPU-backed canvas: CPU-side drawImage, cheap getImageData) and **off** (GPU-backed canvas: GPU drawImage, sync readback) — whichever wins on this device is the candidate's shape.
+
+**Declared threshold (before measurement, 2026-07-12):** total per-frame cost (downscale + readback + reduce), median **and** p95, ≤ **½ frame interval** at the granted rate — the other half of the frame budget stays free for the state machine, UI, and speech on the same thread. 5-minute sustain: no upward drift. The fps threshold and 2 % tolerance from the main block apply unchanged (the pipeline substrate doesn't alter ADR 0003's accuracy claim, which rests on capture timestamps, not on where the reduction runs).
+
+| Metric | willReadFrequently on | willReadFrequently off | Threshold |
+|---|---|---|---|
+| drawImage median / p95 (ms) | TBD | TBD | — (attribution) |
+| getImageData median / p95 (ms) | TBD | TBD | — (attribution) |
+| reduce median / p95 (ms) | TBD | TBD | — (attribution) |
+| **Total median / p95 (ms)** | TBD | TBD | **≤ ½ frame interval** |
+| Processed rate vs camera rate | TBD | TBD | ≈ granted fps |
+| 5-min sustain: drift / end-of-run tick rate | TBD | TBD | no upward drift |
+| Hand-wave visible in strip bars? | TBD | TBD | sanity, not a gate |
+
+**Decision:** TBD — pass → write the ADR 0002-superseding decision (CPU pipeline, gate drops the WebGPU requirement) and amend the Phase 3 plan; miss → measure the WebGL2 fragment-pass fallback before touching ADR 0003.
 
 ## GPU device loss
 

@@ -8,6 +8,7 @@
   import GpuPanel from '../diag/GpuPanel.svelte'
   import TextureImportPanel from '../diag/TextureImportPanel.svelte'
   import ReadbackPanel from '../diag/ReadbackPanel.svelte'
+  import CpuPipelinePanel from '../diag/CpuPipelinePanel.svelte'
   import SpeechPanel from '../diag/SpeechPanel.svelte'
   import OpfsPanel from '../diag/OpfsPanel.svelte'
   import WakeLockPanel from '../diag/WakeLockPanel.svelte'
@@ -58,6 +59,10 @@
 
   <DiagPanel title="Readback benchmark">
     <ReadbackPanel {session} />
+  </DiagPanel>
+
+  <DiagPanel title="CPU pipeline">
+    <CpuPipelinePanel {session} />
   </DiagPanel>
 
   <DiagPanel title="Speech">
