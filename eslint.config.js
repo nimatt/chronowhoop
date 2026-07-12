@@ -34,7 +34,7 @@ export default tseslint.config(
   ...svelte.configs.recommended,
   {
     languageOptions: {
-      globals: { ...globals.browser },
+      globals: { ...globals.browser, __BUILD_ID__: 'readonly' },
     },
   },
   {

@@ -10,6 +10,7 @@
     "test": "vitest run",
     "lint": "eslint .",
     "typecheck": "tsc -b && svelte-check --tsconfig ./tsconfig.app.json",
+    "icons": "bun scripts/generate-icons.ts",
     "check": "bun run typecheck && bun run lint && bun run test && bun run build"
   },
   "devDependencies": {
@@ -25,6 +26,7 @@
     "typescript": "~6.0.2",
     "typescript-eslint": "^8.63.0",
     "vite": "^8.1.4",
+    "vite-plugin-pwa": "^1.3.0",
     "vitest": "^4.1.10"
   }
 }
