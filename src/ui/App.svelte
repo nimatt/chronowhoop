@@ -300,25 +300,6 @@
       border-radius: 18px;
     }
 
-    .fab {
-      position: fixed;
-      right: 20px;
-      bottom: 22px;
-      display: inline-flex;
-      align-items: center;
-      gap: 9px;
-      padding: 14px 20px 14px 16px;
-      border-radius: 16px;
-      border: none;
-      background: var(--c-signal);
-      color: #04120f;
-      font-family: var(--font-sans);
-      font-weight: 600;
-      font-size: 0.96rem;
-      cursor: pointer;
-      box-shadow: 0 14px 30px -12px rgba(51, 222, 207, 0.5);
-    }
-
     /* ---- form fields ---- */
     .field {
       display: flex;

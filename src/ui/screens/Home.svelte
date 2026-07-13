@@ -216,7 +216,7 @@
   {/if}
 
   {#if repo.loaded}
-    <a class="fab" href={hashFor({ id: 'new-course' })}>
+    <a class="btn btn-primary new-course" href={hashFor({ id: 'new-course' })}>
       <svg class="ic plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14" /></svg>
       New course
     </a>
@@ -323,7 +323,7 @@
     flex: none;
   }
 
-  a.fab {
+  a.new-course {
     text-decoration: none;
   }
 
@@ -350,6 +350,10 @@
       display: grid;
       grid-template-columns: 1fr 1fr;
       align-items: start;
+    }
+
+    a.new-course {
+      width: calc((100% - 12px) / 2);
     }
   }
 </style>

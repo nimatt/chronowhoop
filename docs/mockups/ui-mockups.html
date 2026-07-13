@@ -211,14 +211,6 @@
   .btn-ghost { background: var(--c-panel); border-color: var(--c-line); color: var(--c-ink); }
   .btn-danger { background: var(--c-danger); color: #1b0407; }
 
-  .fab {
-    position: absolute; right: 20px; bottom: 22px;
-    display: inline-flex; align-items: center; gap: 9px;
-    padding: 14px 20px 14px 16px; border-radius: 16px;
-    background: var(--c-signal); color: #04120f; font-weight: 600; font-size: .96rem;
-    box-shadow: 0 14px 30px -12px rgba(51,222,207,.5);
-  }
-
   /* form controls */
   .field { display: flex; flex-direction: column; gap: 8px; }
   .field .val { background: var(--c-ground); border: 1px solid var(--c-line); border-radius: 12px; padding: 14px; font-size: 1rem; color: var(--c-ink); }
@@ -419,13 +411,13 @@
             </div>
           </div>
 
-          <div class="fab"><svg class="ic" viewBox="0 0 24 24" style="width:20px;height:20px"><path d="M12 5v14M5 12h14"/></svg>New course</div>
+          <a class="btn btn-primary" style="text-decoration:none"><svg class="ic" viewBox="0 0 24 24" style="width:20px;height:20px"><path d="M12 5v14M5 12h14"/></svg>New course</a>
         </div>
       </div></div>
       <div class="caption">
         <p class="eyebrow"><span class="num">01</span> Home</p>
         <h3>Course list</h3>
-        <p>Every course shows its <b>all-time best lap</b> and <b>best-3</b> straight on the card. The <b>Storage persisted</b> chip confirms OPFS won't be evicted; import/export live in the bar; <b>New course</b> is the thumb-reach action.</p>
+        <p>Every course shows its <b>all-time best lap</b> and <b>best-3</b> straight on the card. The <b>Storage persisted</b> chip confirms OPFS won't be evicted; import/export live in the bar; <b>New course</b> sits under the last course, matching the Start session button's weight (card-width on desktop's two-column grid).</p>
       </div>
     </div>
 
