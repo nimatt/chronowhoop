@@ -8,9 +8,9 @@
   import { errorText } from '../diag/format'
   import { downloadBlob } from './download'
   import { timestampedFilename } from './filenames'
-  import type { LabSession } from './lab-session'
+  import type { CaptureSession } from '../shared/capture-session'
 
-  let { session }: { session: LabSession } = $props()
+  let { session }: { session: CaptureSession } = $props()
 
   // Keeps ~30 s at 60 fps of recent FrameSamples for the energy-JSON
   // convenience capture. Plain array, appended per-frame — never reactive.

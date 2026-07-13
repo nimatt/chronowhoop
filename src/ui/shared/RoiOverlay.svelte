@@ -1,8 +1,8 @@
 <script lang="ts">
-  import type { LabSession } from './lab-session'
+  import type { CaptureSession } from './capture-session'
   import { beginRoiDrag, dragRoi, hitTestRoi, type RoiDrag } from './roi-interaction'
 
-  let { session }: { session: LabSession } = $props()
+  let { session }: { session: CaptureSession } = $props()
 
   const HANDLE_RADIUS_PX = 14
 

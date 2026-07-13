@@ -8,17 +8,19 @@ Six categories, introduced across the roadmap (`docs/plans/00-roadmap.md`). Conc
 script names live in `package.json` — refer to it rather than to any command written
 here.
 
-**Status (Phase 3):** unit tests cover the core services (camera, audio/speech, wake
-lock, OPFS probes, the frozen `/diag` spike modules) and the full CPU detection pipeline
+**Status (Phase 5):** unit tests cover the core services (camera, audio/speech, wake
+lock, OPFS probes, the frozen `/diag` spike modules), the full CPU detection pipeline
 — sources, reducer goldens and determinism, ring buffer, fixture formats, `ClipSource`
-replay, regeneration — and run in `check` and CI. Browser-contract covers the OPFS
-atomic-write probes and mounts the real `Diag.svelte` and `Lab.svelte` components. The
-webgpu (SwiftShader) CI leg from Phases 1–2 is **retired** per
-[ADR 0009](decisions/0009-cpu-pipeline-webcodecs.md): the reduction stage is pure
+replay, regeneration — and the Phase 5 product core (records, announcer formatting and
+queue policy, session engine), all running in `check` and CI. Browser-contract covers
+the OPFS atomic-write probes and mounts the real `Diag.svelte`, `Lab.svelte`, and
+`Fly.svelte` components. The webgpu (SwiftShader) CI leg from Phases 1–2 is **retired**
+per [ADR 0009](decisions/0009-cpu-pipeline-webcodecs.md): the reduction stage is pure
 TypeScript over WebCodecs capture, so determinism and goldens are node tests; the
 `src/core/gpu/` and `src/core/cpu-pipeline/` spike modules remain as `/diag`
-instruments, covered by node unit tests only. The full-loop video-E2E test and the
-manual device checklist are still planned; those sections describe the intended shape.
+instruments, covered by node unit tests only. The full-loop video-E2E test landed in
+Phase 5 (`src/core/full-loop.test.ts` — see Video-E2E); only the manual device
+checklist is still pending, and its section describes the intended shape.
 
 ## Unit
 
@@ -101,14 +103,21 @@ manual device checklist are still planned; those sections describe the intended 
   frame-for-frame.
 - **Does not:** replace unit tests (a failure here does not localize the bug) and does not cover
   live-camera behavior — that is what the device spike and manual checklist measure.
-- **Where:** driven from tests over recorded fixtures; the whole loop is pure TS, so it runs
-  in node and CI. Corpus clips are the canonical asset; strip-energy JSON is a regenerable
-  derivative.
-- **Gating:** yes on the fixture corpus, tiered — `must-pass` fixtures require 100% detection /
-  zero false positives; `known-limitation` fixtures assert documented behavior, and an
-  unexpected pass of a known-hard case also fails (progress is ratcheted in).
-- **Introduced:** the full-loop test lands in Phase 5; the fixture tooling and replay it depends
-  on land in Phase 3; the crossing-detection assertions fill in through Phase 4.
+- **Where:** node (Vitest) and CI — the whole loop is pure TS. The full-loop test is
+  `src/core/full-loop.test.ts` (gating), in two variants: a clip variant (clip →
+  `ClipSource` → CPU reduction → detector → session engine → announcer) and a
+  strip-energy variant (energy sequences → detector onward, the fast twin). Both drive
+  **synthetic** inputs, chosen deliberately so every expectation — crossing timestamps,
+  lap durations, exact announcement decisions — is hand-computable and asserted with
+  exact equality; real corpus clips exercise pipeline + detector via the corpus harness
+  (see Determinism & golden), and a corpus-clip full-loop case is a future option.
+  Corpus clips are the canonical asset; strip-energy JSON is a regenerable derivative.
+- **Gating:** yes — the full-loop test gates, and so does the fixture corpus, tiered —
+  `must-pass` fixtures require 100% detection / zero false positives; `known-limitation`
+  fixtures assert documented behavior, and an unexpected pass of a known-hard case also
+  fails (progress is ratcheted in).
+- **Introduced:** the full-loop test landed in Phase 5; the fixture tooling and replay it
+  depends on landed in Phase 3; the crossing-detection assertions filled in through Phase 4.
 
 ## Manual device checklist
 

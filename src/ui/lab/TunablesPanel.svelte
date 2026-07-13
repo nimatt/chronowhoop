@@ -1,9 +1,9 @@
 <script lang="ts">
   import { DEFAULT_DETECTION_TUNABLES } from '../../core/detection/types'
   import { fmtNumber } from '../diag/format'
-  import type { LabSession } from './lab-session'
+  import type { CaptureSession } from '../shared/capture-session'
 
-  let { session }: { session: LabSession } = $props()
+  let { session }: { session: CaptureSession } = $props()
 
   const tunables = $derived(session.tunables)
 

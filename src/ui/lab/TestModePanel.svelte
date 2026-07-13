@@ -1,30 +1,18 @@
 <script lang="ts">
   import { getAudioService } from '../../core/audio/audio-service'
-  import {
-    CrossingDetector,
-    attachDetectorToPipeline,
-    type PausableFrameSource,
-  } from '../../core/detection/crossing-detector'
+  import { CrossingDetector } from '../../core/detection/crossing-detector'
   import type { CrossingDirection } from '../../core/detection/crossing-events'
-  import {
-    DEFAULT_TRIGGER_SUGGESTION_CONFIG,
-    TriggerLevelCollector,
-  } from '../../core/detection/trigger-suggest'
   import type { Course } from '../../core/domain/types'
   import { SessionEngine } from '../../core/session/session-engine'
   import { errorText, fmtNumber } from '../diag/format'
-  import type { LabSession } from './lab-session'
+  import type { CaptureSession } from '../shared/capture-session'
+  import {
+    attachDetectorToCaptureSession,
+    detectorTriggerLevel,
+  } from '../shared/detector-attachment'
+  import { createTriggerCollection } from '../shared/trigger-collection.svelte'
 
-  let { session }: { session: LabSession } = $props()
-
-  // CrossingDetector's validator rejects triggerLevel ≤ 0. The tunables
-  // slider min already matches, but clamp anyway: any other tunables writer
-  // reaching 0 would otherwise throw uncaught inside the live-tracking
-  // $effect (killing the flush) or the arm click handler.
-  const MIN_DETECTOR_TRIGGER_LEVEL = 0.01
-  function detectorTriggerLevel(level: number): number {
-    return Math.max(MIN_DETECTOR_TRIGGER_LEVEL, level)
-  }
+  let { session }: { session: CaptureSession } = $props()
 
   const audio = getAudioService()
   let audioPrimed = $state(audio.primed)
@@ -53,25 +41,6 @@
     }
   }
 
-  // Adapts the lab session's sample fan-out + pause seam to the detector's
-  // attach helper: start() subscribes instead of starting the (already
-  // running) pipeline, setPause forwards to it.
-  function pausableSampleSource(): PausableFrameSource {
-    let unsubscribe: (() => void) | null = null
-    return {
-      start(onSample) {
-        unsubscribe = session.addSampleListener(onSample)
-      },
-      stop() {
-        unsubscribe?.()
-        unsubscribe = null
-      },
-      setPause(paused) {
-        session.setPipelinePause(paused)
-      },
-    }
-  }
-
   function startTestMode(): void {
     if (testRunning || !session.captureRunning) return
     const nextEngine = new SessionEngine({
@@ -90,8 +59,9 @@
     const nextDetector = new CrossingDetector({
       triggerLevel: detectorTriggerLevel(session.tunables.triggerLevel),
     })
-    const source = pausableSampleSource()
-    attachDetectorToPipeline(source, nextDetector, (event) => nextEngine.onCrossing(event))
+    const detach = attachDetectorToCaptureSession(session, nextDetector, (event) =>
+      nextEngine.onCrossing(event),
+    )
     // Registered after the attach, so it observes the detector state AFTER
     // this frame's onSample. Flips reactive state only on change (event
     // frequency), never per frame.
@@ -103,7 +73,7 @@
     engine = nextEngine
     detector = nextDetector
     detachDetector = () => {
-      source.stop()
+      detach()
       offIndicator()
     }
     testRunning = true
@@ -113,8 +83,6 @@
     if (!testRunning) return
     detachDetector?.()
     detachDetector = null
-    // The detector may have left the EMA paused mid-candidate.
-    session.setPipelinePause(false)
     engine?.stop()
     engine = null
     detector = null
@@ -137,61 +105,11 @@
     }
   }
 
-  // Trigger suggestion (plan 04 item 6 wired into calibration): observe the
-  // next quietWindowMs of samples, then offer the collector's suggestion.
-  const quietWindowMs = DEFAULT_TRIGGER_SUGGESTION_CONFIG.quietWindowMs
-  let collecting = $state(false)
-  let observedMs = $state(0)
-  let suggestion = $state<number | null>(null)
-  let collectionAborted = $state(false)
-  let stopCollecting: (() => void) | null = null
-  // Identity snapshot of session.tunables at collection start: the lab
-  // session replaces the object wholesale on every update (ROI included), so
-  // an identity change means the observed scene's settings changed.
-  let collectionTunables: unknown = null
-
-  function suggestTrigger(): void {
-    if (collecting || !session.captureRunning) return
-    suggestion = null
-    collectionAborted = false
-    observedMs = 0
-    collectionTunables = session.tunables
-    const collector = new TriggerLevelCollector()
-    const offSamples = session.addSampleListener((sample) => collector.add(sample))
-    const poll = setInterval(() => {
-      observedMs = collector.observedSpanMs
-      const ready = collector.suggestion
-      if (ready !== undefined) {
-        suggestion = ready
-        stopCollecting?.()
-      } else if (!session.captureRunning) {
-        stopCollecting?.()
-      }
-    }, 200)
-    stopCollecting = () => {
-      offSamples()
-      clearInterval(poll)
-      stopCollecting = null
-      collecting = false
-    }
-    collecting = true
-  }
-
-  function applySuggestion(): void {
-    if (suggestion !== null) session.updateTunables({ triggerLevel: suggestion })
-  }
-
-  // detection.md: the collector's quiet observation resets when the scene
-  // setup changes. Any tunables update mid-window (slider or ROI — both flow
-  // through session.tunables) invalidates the samples already observed, so
-  // abort rather than suggest from a mixed window.
-  $effect(() => {
-    const current = session.tunables
-    if (collecting && current !== collectionTunables) {
-      stopCollecting?.()
-      collectionAborted = true
-    }
-  })
+  // Trigger suggestion (plan 04 item 6 wired into calibration). The session
+  // prop never changes after mount (created once per screen), so capturing it
+  // at init is deliberate.
+  // svelte-ignore state_referenced_locally
+  const trigger = createTriggerCollection(session)
 
   // Auto-stop with capture (manual stop and external track death alike).
   $effect(() => {
@@ -204,10 +122,7 @@
     if (testRunning) detector?.updateConfig({ triggerLevel })
   })
 
-  $effect(() => () => {
-    stopTestMode()
-    stopCollecting?.()
-  })
+  $effect(() => () => stopTestMode())
 </script>
 
 <div class="controls">
@@ -240,20 +155,24 @@
 {/if}
 
 <div class="controls">
-  <button onclick={suggestTrigger} disabled={collecting || !session.captureRunning}>
+  <button onclick={() => trigger.start()} disabled={trigger.collecting || !session.captureRunning}>
     Suggest trigger
   </button>
-  {#if collecting}
+  {#if trigger.collecting}
     <span class="state">
-      observing quiet scene… {(observedMs / 1000).toFixed(1)} / {(quietWindowMs / 1000).toFixed(0)} s
+      observing quiet scene… {(trigger.observedMs / 1000).toFixed(1)} / {(
+        trigger.quietWindowMs / 1000
+      ).toFixed(0)} s
     </span>
   {/if}
-  {#if collectionAborted}
+  {#if trigger.aborted}
     <span class="state">suggestion aborted — settings changed</span>
   {/if}
-  {#if suggestion !== null}
-    <span class="state">suggested trigger level: <code>{fmtNumber(suggestion, 3)}</code></span>
-    <button onclick={applySuggestion}>Apply</button>
+  {#if trigger.suggestion !== null}
+    <span class="state">
+      suggested trigger level: <code>{fmtNumber(trigger.suggestion, 3)}</code>
+    </span>
+    <button onclick={() => trigger.apply()}>Apply</button>
   {/if}
 </div>
 

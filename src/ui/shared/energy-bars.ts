@@ -1,4 +1,4 @@
-// Canvas rendering for the /lab energy views. Called from frame callbacks —
+// Canvas rendering for the shared (lab + fly) energy views. Called from frame callbacks —
 // per-frame data draws straight to the canvas, never through reactive state
 // (the UI bridge rule, plan 03 item 11).
 

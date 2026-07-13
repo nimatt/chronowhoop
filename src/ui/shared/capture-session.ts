@@ -9,12 +9,12 @@ import type {
 } from '../../core/detection/types'
 import type { WakeLockState } from '../../core/wake-lock/wake-lock'
 
-// The /lab panels' shared seam (created per Lab.svelte mount, torn down on
-// unmount — the diag-session pattern). One capture session = one
-// CameraSource → TeeSource → DetectionPipeline chain plus a screen wake lock;
-// panels observe it through low-frequency reactive fields and register
-// per-frame listeners that never touch reactive state.
-export interface LabSession {
+// The shared capture seam behind both the /lab panels and the /fly timer flow
+// (created per screen mount, torn down on unmount — the diag-session pattern).
+// One capture session = one CameraSource → TeeSource → DetectionPipeline chain
+// plus a screen wake lock; consumers observe it through low-frequency reactive
+// fields and register per-frame listeners that never touch reactive state.
+export interface CaptureSession {
   readonly camera: CameraService
   readonly cameraState: CameraState
   // Live tunables snapshot (reactive; low-frequency).
@@ -30,10 +30,11 @@ export interface LabSession {
   setRoi(roi: NormalizedRect): void
   updateTunables(partial: Partial<Omit<DetectionTunables, 'roi'>>): void
 
-  // The EMA-pause seam for the test-mode panel: forwards to the running
+  // The EMA-pause seam for detector attachment: forwards to the running
   // pipeline's setPause (next-frame effect; no-op when capture is stopped).
   // Together with addSampleListener this is enough to satisfy the detector's
-  // PausableFrameSource without handing out the pipeline itself.
+  // PausableFrameSource without handing out the pipeline itself (see
+  // detector-attachment.ts).
   setPipelinePause(paused: boolean): void
 
   // Non-reactive reads for 1 Hz snapshots; both survive stopCapture() (the

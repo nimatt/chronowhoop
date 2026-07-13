@@ -3,13 +3,13 @@
   import type { LatencyStats } from '../../core/stats/latency-stats'
   import Verdict from '../diag/Verdict.svelte'
   import { fmtFps, fmtMs } from '../diag/format'
-  import type { LabSession } from './lab-session'
-  import { drawNormalizedStripBars } from './energy-bars'
-  import { normalizeEnergies } from './energy-math'
+  import type { CaptureSession } from '../shared/capture-session'
+  import { drawNormalizedStripBars } from '../shared/energy-bars'
+  import { normalizeEnergies } from '../shared/energy-math'
   import { PipelineCostTracker } from './pipeline-cost'
-  import RoiOverlay from './RoiOverlay.svelte'
+  import RoiOverlay from '../shared/RoiOverlay.svelte'
 
-  let { session }: { session: LabSession } = $props()
+  let { session }: { session: CaptureSession } = $props()
 
   let videoEl = $state<HTMLVideoElement | null>(null)
   let barsCanvas: HTMLCanvasElement | null = null

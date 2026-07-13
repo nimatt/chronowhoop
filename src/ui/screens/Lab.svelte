@@ -2,7 +2,7 @@
   import type { CameraMediaDevicesLike } from '../../core/camera/camera-service'
   import DiagPanel from '../diag/DiagPanel.svelte'
   import AnnotationPanel from '../lab/AnnotationPanel.svelte'
-  import { createLabSession } from '../lab/lab-session.svelte'
+  import { createCaptureSession } from '../shared/capture-session.svelte'
   import LivePipelinePanel from '../lab/LivePipelinePanel.svelte'
   import RecorderPanel from '../lab/RecorderPanel.svelte'
   import SelfTestPanel from '../lab/SelfTestPanel.svelte'
@@ -16,7 +16,7 @@
   // The session is created once per mount from the initial prop value — the
   // seam is deliberately not reactive.
   // svelte-ignore state_referenced_locally
-  const session = createLabSession({ mediaDevices })
+  const session = createCaptureSession({ mediaDevices })
 
   $effect(() => () => session.destroy())
 </script>

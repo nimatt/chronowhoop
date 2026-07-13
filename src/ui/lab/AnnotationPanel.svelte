@@ -13,11 +13,11 @@
   import type { LumaFrame } from '../../core/detection/types'
   import { errorText, fmtMs } from '../diag/format'
   import { downloadBlob } from './download'
-  import { drawEnergyTimeline } from './energy-bars'
-  import { maxNormalizedEnergy } from './energy-math'
-  import type { LabSession } from './lab-session'
+  import { drawEnergyTimeline } from '../shared/energy-bars'
+  import { maxNormalizedEnergy } from '../shared/energy-math'
+  import type { CaptureSession } from '../shared/capture-session'
 
-  let { session }: { session: LabSession } = $props()
+  let { session }: { session: CaptureSession } = $props()
 
   let frames = $state.raw<LumaFrame[] | null>(null)
   let header = $state.raw<ClipHeader | null>(null)

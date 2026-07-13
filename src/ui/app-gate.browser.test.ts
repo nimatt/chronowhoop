@@ -60,7 +60,7 @@ describe('App capability gate wiring', () => {
   it('while the capability check is pending, home shows the checking state', async () => {
     mountApp(pending)
     await waitForText('Checking browser capabilities')
-    expect(text()).not.toContain('The product UI arrives')
+    expect(text()).not.toContain('Tiny-whoop lap timer')
     expect(text()).not.toContain("can't run in this browser")
   })
 
@@ -100,7 +100,7 @@ describe('App capability gate wiring', () => {
 
   it('renders home on an all-pass report', async () => {
     mountApp(resolved(passingReport))
-    await waitForText('The product UI arrives in later phases')
+    await waitForText('Tiny-whoop lap timer')
     expect(text()).not.toContain("can't run in this browser")
     expect(text()).not.toContain('Checking browser capabilities')
   })

@@ -17,7 +17,7 @@ Fill TBD slots during the on-device session; then flip status to accepted.
 | Texture-import path | Moot — no WebGPU on the target device ([0009](0009-cpu-pipeline-webcodecs.md)) | — |
 | Timestamp source of truth + fallback | Expected: `VideoFrame.timestamp` (capture timestamp by construction, [0009](0009-cpu-pipeline-webcodecs.md)); on-device jitter measurement still owed | Phase 3/4 capture timestamps |
 | Camera auto-control lockability consequence | TBD — if any control not lockable, global-transient rejection is mandatory | Phase 4 detector scope |
-| Speech queue policy input | TBD — cancel-and-replace vs skip-stale-enqueue-next chosen from the matrix below | Phase 5 announcer |
+| Speech queue policy input | **Interim default, chosen without device evidence (2026-07-13): skip-stale-enqueue-next.** `cancel()` is never called; at most one pending announcement, newest wins; a watchdog treats a wedged utterance as finished after a timeout. Provisional until the S22 speech-probe session fills the matrix below — the `/diag` speech panel remains the instrument. | Phase 5 announcer |
 | Atomic-write evidence | TBD — cited by the Phase 6 atomic-write ADR | Phase 6 storage |
 | Device-loss facts | TBD | Phase 3 recreation path, Phase 5 interruption handling |
 | iOS OPFS partitioning posture | **Decided now (default, no device): export/import is the migration path.** Phase 6 ships working export regardless. | Phase 6/7 |
@@ -191,7 +191,7 @@ Feeds Phase 3 recreation path and Phase 5 armed-session interruption handling.
 
 Mute-switch / screen-dim observations: TBD. Default voice stability across `voiceschanged`: TBD.
 
-Feeds Phase 5's queue policy (cancel-and-replace vs skip-stale-enqueue-next).
+Feeds Phase 5's queue policy. **Phase 5 shipped ahead of these measurements with skip-stale-enqueue-next as the interim default (see Decisions table)**; filling this matrix confirms or revises that choice — in particular, cancel-and-replace becomes viable only if `cancel()`-then-`speak()` proves reliable here.
 
 ## OPFS
 

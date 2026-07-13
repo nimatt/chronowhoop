@@ -1,7 +1,9 @@
-export type RouteId = 'home' | 'diag' | 'lab'
+export type RouteId = 'home' | 'fly' | 'diag' | 'lab'
 
 export function routeFromHash(hash: string): RouteId {
   switch (hash) {
+    case '#/fly':
+      return 'fly'
     case '#/diag':
       return 'diag'
     case '#/lab':

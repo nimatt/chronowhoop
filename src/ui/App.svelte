@@ -3,6 +3,7 @@
   import { routeFromHash, shouldShowUnsupportedScreen } from '../core/routing/route'
   import Home from './screens/Home.svelte'
   import Diag from './screens/Diag.svelte'
+  import Fly from './screens/Fly.svelte'
   import Lab from './screens/Lab.svelte'
   import Unsupported from './screens/Unsupported.svelte'
   import UpdateBanner from './UpdateBanner.svelte'
@@ -28,6 +29,8 @@
   <Lab />
 {:else if report === null}
   <p class="checking">Checking browser capabilities…</p>
+{:else if route === 'fly'}
+  <Fly />
 {:else}
   <Home />
 {/if}

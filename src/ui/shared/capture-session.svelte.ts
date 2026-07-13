@@ -18,17 +18,28 @@ import {
   type WakeLockService,
   type WakeLockState,
 } from '../../core/wake-lock/wake-lock'
-import type { LabSession } from './lab-session'
+import type { CaptureSession } from './capture-session'
 
-export interface LabSessionOptions {
+export interface CaptureSessionOptions {
   // Test seam: the browser test injects a mediaDevices whose getUserMedia
   // resolves to a canvas captureStream; production uses the real one.
   mediaDevices?: CameraMediaDevicesLike
+  // Called synchronously inside startCapture, BEFORE anything is awaited, so
+  // it still runs in the user-gesture context of the Start click (the fly
+  // screen unlocks audio here — gesture-gated APIs would fail after an await).
+  onStartGesture?: () => void
+  // Called after an EXTERNAL camera death (track ended, permission revoked)
+  // has torn capture down — never on deliberate stopCapture(). The fly screen
+  // auto-stops its session here.
+  onCameraFailure?: () => void
+  // Called after updateTunables applied a partial to the pipeline (the fly
+  // screen forwards triggerLevel to its live detector).
+  onTunablesUpdated?: (partial: Partial<Omit<DetectionTunables, 'roi'>>) => void
 }
 
-// Created per mount of Lab.svelte — navigating away tears everything down
-// (camera, pipeline, wake lock) and a revisit starts fresh.
-export function createLabSession(options: LabSessionOptions = {}): LabSession {
+// Created per screen mount — navigating away tears everything down (camera,
+// pipeline, wake lock) and a revisit starts fresh.
+export function createCaptureSession(options: CaptureSessionOptions = {}): CaptureSession {
   const camera = options.mediaDevices
     ? new CameraService(options.mediaDevices)
     : new CameraService()
@@ -68,6 +79,7 @@ export function createLabSession(options: LabSessionOptions = {}): LabSession {
     if (captureRunning && 'error' in next) {
       captureError = `capture stopped: camera ${next.status} (${next.error.kind}): ${next.error.message}`
       teardownCapture()
+      options.onCameraFailure?.()
     }
   })
 
@@ -75,6 +87,7 @@ export function createLabSession(options: LabSessionOptions = {}): LabSession {
     if (captureRunning || starting) return
     starting = true
     captureError = null
+    options.onStartGesture?.()
     try {
       const state = await camera.start()
       if (state.status !== 'active') return
@@ -97,7 +110,9 @@ export function createLabSession(options: LabSessionOptions = {}): LabSession {
 
       // Wake lock per capture session, created here in the gesture handler
       // (never at render time — the WakeLockPanel lesson: a boundary-caught
-      // render crash must not leak its visibilitychange listener).
+      // render crash must not leak its visibilitychange listener). Held for
+      // the whole camera-active flow (product.md: long calibration must not
+      // dim the screen).
       const generation = ++wakeLockGeneration
       wakeLock = createWakeLockService({
         onTransition: (transition) => {
@@ -142,6 +157,7 @@ export function createLabSession(options: LabSessionOptions = {}): LabSession {
   function updateTunables(partial: Partial<Omit<DetectionTunables, 'roi'>>): void {
     tunables = { ...tunables, ...partial }
     pipeline?.updateTunables(partial)
+    options.onTunablesUpdated?.(partial)
   }
 
   return {

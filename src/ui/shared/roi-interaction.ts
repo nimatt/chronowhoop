@@ -1,5 +1,5 @@
-// Pure drag/resize math for the /lab ROI overlay (plan 03 item 10 — this
-// interaction prototypes the product calibration UX). Everything is in
+// Pure drag/resize math for the shared ROI overlay (plan 03 item 10; used by
+// the lab and fly calibration screens alike). Everything is in
 // coordinates normalized to the preview: the component converts pointer
 // pixels via getBoundingClientRect and stays thin wiring.
 

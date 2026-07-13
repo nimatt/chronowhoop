@@ -1,4 +1,4 @@
-// Pure strip-energy math for the /lab visualizations. FrameSamples carry
+// Pure strip-energy math for the shared (lab + fly) visualizations. FrameSamples carry
 // integer hot-pixel counts plus per-strip pixel counts; normalization (the
 // division) is the consumer's job per detection.md, and a zero denominator
 // (stripCount > working width leaves empty strips) normalizes to 0 rather

@@ -18,6 +18,10 @@ describe('routeFromHash', () => {
     expect(routeFromHash('#/lab')).toBe('lab')
   })
 
+  it('maps #/fly to fly', () => {
+    expect(routeFromHash('#/fly')).toBe('fly')
+  })
+
   it('maps unknown hashes to home', () => {
     expect(routeFromHash('#/nope')).toBe('home')
     expect(routeFromHash('#garbage')).toBe('home')
@@ -26,14 +30,16 @@ describe('routeFromHash', () => {
 })
 
 describe('capability gate exemption', () => {
-  it('exempts diag and lab, not home', () => {
+  it('exempts diag and lab, not home or fly', () => {
     expect(isGateExempt('diag')).toBe(true)
     expect(isGateExempt('lab')).toBe(true)
     expect(isGateExempt('home')).toBe(false)
+    expect(isGateExempt('fly')).toBe(false)
   })
 
-  it('shows the unsupported screen on home when capabilities fail', () => {
+  it('shows the unsupported screen on home and fly when capabilities fail', () => {
     expect(shouldShowUnsupportedScreen(false, 'home')).toBe(true)
+    expect(shouldShowUnsupportedScreen(false, 'fly')).toBe(true)
   })
 
   it('never shows the unsupported screen on diag or lab', () => {

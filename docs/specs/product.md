@@ -12,16 +12,20 @@ A course can have any number of sessions. Deleting is out of scope for this spec
 
 1. **Setup** — user picks a course (new sessions prefill detection config from the course's most recent session), positions the camera, adjusts the ROI and sensitivity with a live overlay showing per-strip motion energy and the threshold.
 2. **Test mode** — detection runs but records nothing; every detected valid crossing gives immediate audio feedback (no minimum-lap-time debounce in test mode — rapid hand-waves each get feedback; wrong-direction crossings stay silent). Used to verify setup by hand-wave or fly-through.
-3. **Armed** — a Screen Wake Lock is held; the first valid crossing starts the clock (it completes no lap). Each subsequent valid crossing completes a lap and immediately starts the next.
+3. **Armed** — the first valid crossing starts the clock (it completes no lap). Each subsequent valid crossing completes a lap and immediately starts the next.
 4. **Stopped** — manual stop only. An in-progress (incomplete) lap is dropped.
 
+A Screen Wake Lock is held for the whole camera-active flow (setup through stopped), not only while armed — long calibration must not dim the screen. Wake-lock loss is surfaced in the UI.
+
 Crossings in the wrong direction are ignored. Crossings closer together than the minimum lap time are ignored (debounce — measured from the last accepted crossing; ignored crossings don't extend the window). A **discard last lap** control marks the most recent lap `discarded` (used after crashes, walk-throughs, false triggers); timing of the current lap continues unaffected.
+
+Interruptions while armed: if the page is hidden (call, notification, app switch), camera capture and detection stop with it — the session stays armed and timing continues, crossings during the gap are simply missed, and on return a dismissable notice says detection was interrupted. If the camera stream dies while armed (device lost, permission revoked, camera claimed elsewhere), the failure is surfaced prominently and the session stops automatically with its completed laps retained — never a silently dead pipeline behind a running clock.
 
 ## Records
 
 - **Best lap** — minimum duration over valid laps.
 - **Best three consecutive** — minimum sum over every window of 3 successive valid laps. A discarded lap breaks consecutiveness: windows cannot span it.
-- Both are shown per session and all-time per course (across all its sessions). Records are always computed from lap data, never stored.
+- Both are shown per session and all-time per course (across all its sessions). Best-three windows never span a session boundary — laps in different sessions are not consecutive, so the course all-time best three is the best within-session window across its sessions. Records are always computed from lap data, never stored.
 
 ## Speech feedback
 
@@ -31,6 +35,10 @@ Spoken via the Web Speech API (English, slightly elevated rate), terse so announ
 - New session-best lap: prefix "best" — "best fourteen one".
 - New session-best three consecutive: "best three" after the lap time.
 - Test-mode crossing: short confirmation sound/word.
+
+Announced times are rounded to the nearest tenth, half up (14.35 → "fourteen four"). "Best" / "best three" are announced only on improvement over an existing session record: the first valid lap and the first-ever three-lap window are not announced as records, and a tie never announces.
+
+If an announcement arrives while one is speaking, it is queued; only the newest queued announcement survives (older queued ones are dropped). Speech is never cut off mid-word. A stuck speech engine is skipped after a timeout so announcements cannot wedge.
 
 ## Session view
 
