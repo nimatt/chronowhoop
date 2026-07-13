@@ -49,7 +49,7 @@ If reduction falls behind the delivered camera rate, frames drop **at the source
 
 ## Orientation
 
-The ROI is bound to the device orientation captured at setup — an **app-state binding, not an OS screen lock**. On an orientation change while a course is configured, the app warns and invalidates detection until the setup orientation is restored; it never remaps the ROI across orientations. (Not yet enforced by the product UI — scheduled Phase 7.)
+The ROI is bound to the device orientation captured at setup (when the camera starts) — an **app-state binding, not an OS screen lock**. On an orientation change while the camera is running, the app warns prominently and invalidates detection until the setup orientation is restored; it never remaps the ROI across orientations. Invalidation is honest: the crossing detector is detached (not paused — the rotated frames make both the background model and strip geometry meaningless), so crossings during the mismatch are lost; an armed session stays armed and timing continues, and on restore the background model is reset, detection re-attaches quiet, and the armed screen shows the detection-was-interrupted notice. Arming and test mode are refused while mismatched. Stopping the camera releases the binding; the next camera start binds to the current orientation.
 
 ## Calibration UX
 

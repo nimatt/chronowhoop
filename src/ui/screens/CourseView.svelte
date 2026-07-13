@@ -88,53 +88,57 @@
 
     <a class="fly-button" href={hashFor({ id: 'fly', courseId: course.id })}>Fly</a>
 
-    <section class="records-section">
-      <h2>All-time records</h2>
-      {#if allTime === null}
-        <p class="hint">Loading sessions…</p>
-      {:else}
-        <RecordsSummary records={allTime} />
-      {/if}
-    </section>
+    <!-- Stacked on the phone; side-by-side columns on desktop (the review
+         story: records at a glance next to the session list). -->
+    <div class="review-columns">
+      <section class="records-section">
+        <h2>All-time records</h2>
+        {#if allTime === null}
+          <p class="hint">Loading sessions…</p>
+        {:else}
+          <RecordsSummary records={allTime} />
+        {/if}
+      </section>
 
-    <section class="sessions">
-      <h2>Sessions</h2>
-      {#if sessionsRepo.lastError !== null}
-        <p class="notice-error">Storage error: {sessionsRepo.lastError.message}</p>
-      {/if}
-      {#if unreadableCount > 0}
-        <p class="notice-warning">
-          {unreadableCount} session{unreadableCount === 1 ? '' : 's'} could not be read and
-          {unreadableCount === 1 ? 'is' : 'are'} not shown.
-        </p>
-      {/if}
-      {#if sessionItems === null}
-        <p class="hint">Loading sessions…</p>
-      {:else if sessionItems.length === 0}
-        <p class="hint">No sessions yet — hit Fly to time your first laps here.</p>
-      {:else}
-        <ul>
-          {#each sessionItems as item (item.id)}
-            <li>
-              <a href={hashFor({ id: 'session', sessionId: item.id })}>
-                <span class="date">{formatDateTime(item.startedAt)}</span>
-                <span class="counts">
-                  {item.validLapCount} lap{item.validLapCount === 1 ? '' : 's'}
-                  {#if item.discardedCount > 0}
-                    ({item.discardedCount} discarded)
-                  {/if}
-                </span>
-                <span class="best">
-                  {#if item.best !== undefined}
-                    best {formatLapSeconds(item.best.durationMs)}
-                  {/if}
-                </span>
-              </a>
-            </li>
-          {/each}
-        </ul>
-      {/if}
-    </section>
+      <section class="sessions">
+        <h2>Sessions</h2>
+        {#if sessionsRepo.lastError !== null}
+          <p class="notice-error">Storage error: {sessionsRepo.lastError.message}</p>
+        {/if}
+        {#if unreadableCount > 0}
+          <p class="notice-warning">
+            {unreadableCount} session{unreadableCount === 1 ? '' : 's'} could not be read and
+            {unreadableCount === 1 ? 'is' : 'are'} not shown.
+          </p>
+        {/if}
+        {#if sessionItems === null}
+          <p class="hint">Loading sessions…</p>
+        {:else if sessionItems.length === 0}
+          <p class="hint">No sessions yet — hit Fly to time your first laps here.</p>
+        {:else}
+          <ul>
+            {#each sessionItems as item (item.id)}
+              <li>
+                <a href={hashFor({ id: 'session', sessionId: item.id })}>
+                  <span class="date">{formatDateTime(item.startedAt)}</span>
+                  <span class="counts">
+                    {item.validLapCount} lap{item.validLapCount === 1 ? '' : 's'}
+                    {#if item.discardedCount > 0}
+                      ({item.discardedCount} discarded)
+                    {/if}
+                  </span>
+                  <span class="best">
+                    {#if item.best !== undefined}
+                      best {formatLapSeconds(item.best.durationMs)}
+                    {/if}
+                  </span>
+                </a>
+              </li>
+            {/each}
+          </ul>
+        {/if}
+      </section>
+    </div>
   {/if}
 </main>
 
@@ -235,5 +239,27 @@
 
   .hint {
     opacity: 0.75;
+  }
+
+  /* Desktop (48rem breakpoint, see App.svelte): records beside the session
+     list — the import-a-phone-export-and-review story. */
+  @media (min-width: 48rem) {
+    main {
+      max-width: 64rem;
+    }
+
+    /* space-between across the full 64rem strands Edit at the far edge —
+       keep it next to the name instead. */
+    .title-row {
+      justify-content: flex-start;
+      gap: 1.25rem;
+    }
+
+    .review-columns {
+      display: grid;
+      grid-template-columns: minmax(16rem, 20rem) minmax(0, 44rem);
+      gap: 2.5rem;
+      align-items: start;
+    }
   }
 </style>

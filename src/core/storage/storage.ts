@@ -34,8 +34,8 @@ export interface PersistenceStatus {
   persisted: boolean
 }
 
-// storage.md import semantics (merge by ID, existing IDs skipped) — the
-// implementation is Phase 7; Phase 6 implementations reject from importAll.
+// storage.md import semantics (merge by ID): what landed vs. what was
+// already there, reported to the user after every import.
 export interface ImportResult {
   coursesAdded: number
   coursesSkipped: number
@@ -70,8 +70,16 @@ export interface Storage {
   // omissions — the quarantining read already removed them and reported
   // through the implementation's quarantine channel.
   exportAll(): Promise<ExportEnvelope>
-  // Phase 7. Phase 6 implementations reject with a plain Error (not a
-  // StorageError — calling it is a programming error, not a storage failure).
+  // Merge by ID (storage.md): unknown courses/sessions added, existing ids
+  // skipped, local settings untouched; courses land before sessions. A
+  // mid-import write failure rejects with that write's StorageError and the
+  // counts so far are lost — re-importing the same file is the recovery
+  // (merge-by-ID makes it idempotent). Implementations share
+  // importIntoStorage (import.ts); the envelope comes from parseImportFile.
+  // Known in-tab race (accepted): the course write-back re-persists the
+  // settings read at import start, so a concurrent fire-and-forget settings
+  // write (e.g. lastExportAt after an export) can be reverted — costs at most
+  // one extra backup nudge.
   importAll(envelope: ExportEnvelope): Promise<ImportResult>
   persistenceStatus(): Promise<PersistenceStatus>
 }

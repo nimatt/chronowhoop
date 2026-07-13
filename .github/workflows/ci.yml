@@ -26,6 +26,13 @@ jobs:
           bun-version: 1.3.14
       - run: bun install --frozen-lockfile
       - run: bun run check
+      # `check` ends with the build, so dist/ exists here. The precache
+      # completeness test self-skips without it (unit tests run pre-build);
+      # PRECACHE_REQUIRED=1 turns that skip into a failure so this step can
+      # never silently pass without a build to check.
+      - run: bun run test:precache
+        env:
+          PRECACHE_REQUIRED: '1'
 
   # Gating: real-OPFS read/write contract in headless Chromium.
   browser-opfs-chromium:

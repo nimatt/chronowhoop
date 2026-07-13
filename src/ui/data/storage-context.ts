@@ -53,6 +53,16 @@ export interface SessionsRepoView {
   saveSession(session: Session): Promise<boolean>
 }
 
+// Optional capability member some Storage implementations carry (OpfsStorage
+// today). Checked structurally rather than via `instanceof OpfsStorage`, so
+// any storage — a future sync-backed one, a read-only test double — can opt
+// in without this module naming it. Unlike StorageContext.readOnly (a mirror
+// refreshed after repository operations) this reads the live answer.
+export function storageReadOnly(storage: Storage): boolean {
+  const { readOnly } = storage as { readOnly?: unknown }
+  return typeof readOnly === 'boolean' ? readOnly : false
+}
+
 export interface StorageContext {
   readonly storage: Storage
   // True when another tab holds the writer lock (OpfsStorage); refreshed

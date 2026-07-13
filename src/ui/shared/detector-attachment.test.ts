@@ -100,15 +100,33 @@ describe('attachDetectorToCaptureSession', () => {
     expect(stub.pauseCalls.at(-1)).toBe(false)
 
     detach()
-    // Detach unsubscribes AND un-pauses (the detector may have left the EMA
-    // paused mid-candidate).
     expect(stub.listenerCount()).toBe(0)
-    expect(stub.pauseCalls.at(-1)).toBe(false)
 
     // A detached detector sees nothing: replaying the whole sequence adds no
     // laps — the "arm() stops attaching and the suite stays green" hole.
     stub.pump(samples)
     expect(laps.length).toBe(1)
+  })
+
+  it('detach mid-candidate un-pauses the EMA the detector left paused', () => {
+    const { samples, first } = twoWaveSequence()
+    const preCrossing = samples.filter((sample) => sample.captureTimeMs < first.crossingTimeMs)
+
+    const stub = stubCaptureSession()
+    const { engine, detector } = armedRig()
+    const detach = attachDetectorToCaptureSession(stub.session, detector, (event) =>
+      engine.onCrossing(event),
+    )
+
+    // Stop pumping mid-candidate: the detector has paused the EMA and nothing
+    // will un-pause it — the un-pause must come from detach itself.
+    stub.pump(preCrossing)
+    expect(detector.crossingInProgress).toBe(true)
+    expect(stub.pauseCalls.at(-1)).toBe(true)
+
+    detach()
+    expect(stub.pauseCalls.at(-1)).toBe(false)
+    expect(stub.listenerCount()).toBe(0)
   })
 
   it('detector.reset() mid-candidate drops the in-flight crossing (the arm-from-test-mode fix)', () => {

@@ -1,8 +1,10 @@
 <script lang="ts">
   import { hashFor } from '../../core/routing/route'
-  import { exportAllToBlob } from '../../core/storage/export'
+  import { parseImportFile } from '../../core/storage/import'
+  import { isStorageError, type ImportResult } from '../../core/storage/storage'
   import type { StorageContext } from '../data/storage-context'
-  import { downloadBlob } from '../shared/download'
+  import { pwaInstall } from '../pwa-install.svelte'
+  import { exportOutcomeNotice, runExport, type ExportNotice } from '../shared/export-action'
   import { directionArrow, formatMinLap } from './course-format'
 
   let { context }: { context: StorageContext } = $props()
@@ -15,28 +17,68 @@
   void repo.ensureLoaded()
 
   let exporting = $state(false)
-  let exportNotice = $state<{ ok: boolean; text: string } | null>(null)
+  let exportNotice = $state<ExportNotice | null>(null)
 
-  // Working export (plan 06 item 6): assemble the envelope, deliver it as an
-  // anchor download, then record lastExportAt (the Phase 7 backup-nudge seam)
-  // through the repo so the settings mirror updates with it. Recording is
-  // fire-and-forget: the export already reached the user; a stale
-  // lastExportAt only costs an extra nudge.
+  // Share sheet on phones, anchor download elsewhere; lastExportAt recording
+  // and the notice copy live in export-action (shared with the post-session
+  // backup nudge).
   async function exportAll(): Promise<void> {
     if (exporting) return
     exporting = true
     exportNotice = null
-    try {
-      const { blob, filename, exportedAt } = await exportAllToBlob(context.storage)
-      downloadBlob(filename, blob)
-      exportNotice = { ok: true, text: `Exported ${filename}` }
-      void repo.updateSettings({ lastExportAt: exportedAt })
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error)
-      exportNotice = { ok: false, text: `Export failed: ${message}` }
-    } finally {
-      exporting = false
+    exportNotice = exportOutcomeNotice(await runExport(context))
+    exporting = false
+  }
+
+  let importing = $state(false)
+  let importNotice = $state<{ ok: boolean; text: string } | null>(null)
+  let importInput: HTMLInputElement | undefined
+
+  const plural = (count: number, noun: string) => `${String(count)} ${noun}${count === 1 ? '' : 's'}`
+
+  function describeImportResult(result: ImportResult): string {
+    const added = `Added ${plural(result.coursesAdded, 'course')} and ${plural(result.sessionsAdded, 'session')}`
+    const skipped = `skipped ${plural(result.coursesSkipped, 'course')} and ${plural(result.sessionsSkipped, 'session')} already present`
+    return `${added}; ${skipped}.`
+  }
+
+  function describeImportError(error: unknown): string {
+    if (isStorageError(error)) {
+      // 'unsupported-version' already carries the "update the app" phrasing.
+      if (error.kind === 'unsupported-version') return error.message
+      if (error.kind === 'corrupt') return `Not a valid export file — ${error.message}`
     }
+    return `Import failed: ${error instanceof Error ? error.message : String(error)}`
+  }
+
+  // Import (plan 07 item 2, UI half): parse/validate, merge through the
+  // storage seam, then refresh BOTH repos — importAll writes behind their
+  // backs (the invalidation rule in storage-context.ts). The refreshes run
+  // in finally: a mid-import failure may have landed partial writes, and the
+  // UI must show them rather than a stale snapshot. Refreshes never reject
+  // (repo failures land in lastError).
+  async function importFile(file: File): Promise<void> {
+    importing = true
+    importNotice = null
+    try {
+      const envelope = parseImportFile(await file.text())
+      const result = await context.storage.importAll(envelope)
+      importNotice = { ok: true, text: describeImportResult(result) }
+    } catch (error) {
+      importNotice = { ok: false, text: describeImportError(error) }
+    } finally {
+      await Promise.all([repo.reload(), context.sessionsRepo.refresh()])
+      importing = false
+    }
+  }
+
+  function onImportChange(event: Event): void {
+    const input = event.currentTarget as HTMLInputElement
+    const file = input.files?.[0]
+    // Reset so picking the same file again re-fires change (re-import after
+    // a mid-import failure is the documented recovery path).
+    input.value = ''
+    if (file !== undefined) void importFile(file)
   }
 </script>
 
@@ -50,9 +92,12 @@
     </p>
   {/if}
 
+  <!-- Persistent indicator (plan 07 item 3): shown on every Home visit for as
+       long as persist() has not been granted — denied or not yet answered. -->
   {#if context.persistence !== null && !context.persistence.persisted}
     <p class="persist-warning">
-      Storage is not yet persistent — the browser may evict data under pressure. Export regularly.
+      Storage may be cleared by the browser — persistent storage was not granted. Export regularly
+      to keep a backup.
     </p>
   {/if}
 
@@ -86,13 +131,33 @@
     <a class="new-course" href={hashFor({ id: 'new-course' })}>New course</a>
   {/if}
 
-  <div class="export">
-    <button onclick={() => void exportAll()} disabled={exporting}>
-      {exporting ? 'Exporting…' : 'Export data'}
-    </button>
+  <div class="data-actions">
+    <div class="buttons">
+      <button onclick={() => void exportAll()} disabled={exporting}>
+        {exporting ? 'Exporting…' : 'Export data'}
+      </button>
+      <button onclick={() => importInput?.click()} disabled={importing}>
+        {importing ? 'Importing…' : 'Import data'}
+      </button>
+      <input
+        class="import-input"
+        type="file"
+        accept=".json,application/json"
+        bind:this={importInput}
+        onchange={onImportChange}
+      />
+      {#if pwaInstall.available}
+        <button onclick={() => void pwaInstall.prompt()}>Install app</button>
+      {/if}
+    </div>
     {#if exportNotice !== null}
-      <p class={exportNotice.ok ? 'export-ok' : 'export-failed notice-error'} role="status">
+      <p class={exportNotice.ok ? 'action-ok' : 'action-failed notice-error'} role="status">
         {exportNotice.text}
+      </p>
+    {/if}
+    {#if importNotice !== null}
+      <p class={importNotice.ok ? 'action-ok' : 'action-failed notice-error'} role="status">
+        {importNotice.text}
       </p>
     {/if}
   </div>
@@ -222,12 +287,19 @@
     border-color: #7ea6ff;
   }
 
-  .export {
+  .data-actions {
     margin: 0 auto 1.5rem;
     max-width: 26rem;
   }
 
-  .export button {
+  .data-actions .buttons {
+    display: flex;
+    justify-content: center;
+    flex-wrap: wrap;
+    gap: 0.6rem;
+  }
+
+  .data-actions button {
     background: #16233c;
     color: #e8edf7;
     border: 1px solid #2c3850;
@@ -237,23 +309,27 @@
     cursor: pointer;
   }
 
-  .export button:hover:not(:disabled) {
+  .data-actions button:hover:not(:disabled) {
     border-color: #7ea6ff;
   }
 
-  .export button:disabled {
+  .data-actions button:disabled {
     opacity: 0.45;
     cursor: default;
   }
 
-  .export-ok {
+  .import-input {
+    display: none;
+  }
+
+  .action-ok {
     margin: 0.5rem 0 0;
     font-size: 0.85rem;
     color: #86efac;
     overflow-wrap: anywhere;
   }
 
-  .export-failed {
+  .action-failed {
     margin: 0.5rem 0 0;
   }
 
@@ -263,5 +339,19 @@
     gap: 1.5rem;
     font-size: 0.85rem;
     opacity: 0.6;
+  }
+
+  /* Desktop (48rem breakpoint, see App.svelte): two course cards per row. */
+  @media (min-width: 48rem) {
+    main {
+      max-width: 56rem;
+    }
+
+    .courses {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 0.8rem;
+      max-width: 46rem;
+    }
   }
 </style>

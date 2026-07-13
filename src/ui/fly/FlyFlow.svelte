@@ -5,6 +5,7 @@
   import type { StorageContext } from '../data/storage-context'
   import { createFlySession } from './fly-session.svelte'
   import type { FlySession } from './fly-session'
+  import type { OrientationMatchMedia } from './orientation-binding'
   import FlyArmedPanel from './FlyArmedPanel.svelte'
   import FlySetupPanel from './FlySetupPanel.svelte'
   import FlyStoppedPanel from './FlyStoppedPanel.svelte'
@@ -12,20 +13,22 @@
 
   // Mounted by Fly.svelte once the course (and the prefill snapshot) has
   // loaded; the props are captured at mount — the flow never re-targets.
-  // mediaDevices is the browser test's capture seam; onsession hands the test
-  // the created session (for the crossing-injection seam). The real route
-  // passes neither.
+  // mediaDevices and matchMedia are the browser tests' capture/orientation
+  // seams; onsession hands the test the created session (for the
+  // crossing-injection seam). The real route passes none of them.
   let {
     context,
     course,
     initialDetectionConfig,
     mediaDevices,
+    matchMedia,
     onsession,
   }: {
     context: StorageContext
     course: Course
     initialDetectionConfig?: SessionDetectionConfig
     mediaDevices?: CameraMediaDevicesLike
+    matchMedia?: OrientationMatchMedia
     onsession?: (session: FlySession) => void
   } = $props()
 
@@ -37,6 +40,7 @@
     storage: context.storage,
     ...(initialDetectionConfig !== undefined ? { initialDetectionConfig } : {}),
     ...(mediaDevices !== undefined ? { mediaDevices } : {}),
+    ...(matchMedia !== undefined ? { matchMedia } : {}),
     // Read at announcement time; the toggle below persists the setting.
     speechEnabled: () => context.coursesRepo.settings.speechEnabled,
     // The most recently FLOWN course (fire-and-forget; arm never awaits).
@@ -71,7 +75,9 @@
   const savingPrevious = $derived(
     (session.phase === 'setup' || session.phase === 'test') && session.persisterState.pending,
   )
-  const armDisabled = $derived(readOnly || savingPrevious)
+  // … and while the device has left the setup orientation (detection.md
+  // "Orientation" — the session refuses arm() then too).
+  const armDisabled = $derived(readOnly || savingPrevious || session.orientationMismatch)
 
   function arm(): void {
     // The lock answer settles async, so the polled value may be stale for up
@@ -85,13 +91,26 @@
 <main class="fly">
   <header>
     <h1>{course.name}</h1>
-    {#if session.phase === 'setup'}
+    <!-- Leaving mid-flight must stay deliberate (browser back), but setup and
+         stopped are the natural entry/exit points of the loop. -->
+    {#if session.phase === 'setup' || session.phase === 'stopped'}
       <nav>
         <a href={hashFor({ id: 'course', courseId: course.id })}>Course</a>
         <a href={hashFor({ id: 'home' })}>Home</a>
       </nav>
     {/if}
   </header>
+
+  <!-- Orientation binding (detection.md): the warning renders over every
+       camera-active phase — during setup the ROI calibration is bound to the
+       orientation too, and while armed the detector is detached until the
+       device is rotated back. -->
+  {#if session.orientationMismatch && session.boundOrientation !== null && session.phase !== 'stopped'}
+    <p class="banner orientation-banner" role="alert">
+      Rotate the phone back to {session.boundOrientation} — detection is paused until the setup
+      orientation is restored.
+    </p>
+  {/if}
 
   {#if session.phase === 'setup' || session.phase === 'test'}
     {#if readOnly}
@@ -118,7 +137,7 @@
   {:else if session.phase === 'armed'}
     <FlyArmedPanel {session} />
   {:else}
-    <FlyStoppedPanel {session} />
+    <FlyStoppedPanel {session} {context} />
   {/if}
 </main>
 
@@ -148,6 +167,12 @@
     border: 1px solid #8a6420;
     color: #ffd27e;
     font-size: 0.95rem;
+  }
+
+  /* Must be legible at a glance from beside the gate. */
+  .orientation-banner {
+    font-size: 1.1rem;
+    font-weight: 600;
   }
 
   /* Shared styling for the phase panels (scoped styles don't reach child

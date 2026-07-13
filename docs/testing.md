@@ -8,36 +8,52 @@ Six categories, introduced across the roadmap (`docs/plans/00-roadmap.md`). Conc
 script names live in `package.json` — refer to it rather than to any command written
 here.
 
-**Status (Phase 6):** unit tests cover the core services (camera, audio/speech, wake
-lock, OPFS probes, the frozen `/diag` spike modules), the full CPU detection pipeline
-— sources, reducer goldens and determinism, ring buffer, fixture formats, `ClipSource`
-replay, regeneration — the Phase 5 product core (records, announcer formatting and
-queue policy, session engine), and the Phase 6 storage layer (schema
-validators/migrations, session persister, export assembly, UI repositories), all
-running in `check` and CI. The storage contract suite runs in node against
-`MemoryStorage` and against `OpfsStorage` over a fake OPFS, and in real Chromium
-against `OpfsStorage` over real OPFS — see Browser-contract for the exact node/browser
-split. The full-loop video-E2E test (`src/core/full-loop.test.ts`) gained a storage
-variant proving the never-block contract (see Video-E2E). Browser-contract covers the
-OPFS atomic-write probes, the real-OPFS storage suites, and component tests for the
-product screens. The webgpu (SwiftShader) CI leg from Phases 1–2 is **retired**
-per [ADR 0009](decisions/0009-cpu-pipeline-webcodecs.md): the reduction stage is pure
-TypeScript over WebCodecs capture, so determinism and goldens are node tests; the
-`src/core/gpu/` and `src/core/cpu-pipeline/` spike modules remain as `/diag`
-instruments, covered by node unit tests only. Only the manual device checklist is
-still pending, and its section describes the intended shape.
+**Status (Phase 7 / v1):** every category is populated. Unit tests cover the core
+services (camera, audio/speech, wake lock, OPFS probes, the frozen `/diag` spike
+modules — Phases 1–2), the full CPU detection pipeline — sources, reducer goldens and
+determinism, ring buffer, fixture formats, `ClipSource` replay, regeneration (Phase 3)
+— the crossing detector with its synthetic suite and the tier-aware corpus harness
+(Phase 4), the Phase 5 product core (records, announcer formatting and queue policy,
+session engine), the Phase 6 storage layer (schema validators/migrations, session
+persister, export assembly, UI repositories), and the Phase 7 portability core
+(import parse/merge plus its fuzz/property suite, the backup-nudge predicate, the
+orientation binding), all running in `check` and CI. The storage contract suite runs
+in node against `MemoryStorage` and against `OpfsStorage` over a fake OPFS, and in
+real Chromium against `OpfsStorage` over real OPFS — see Browser-contract for the
+exact node/browser split. The full-loop video-E2E test (`src/core/full-loop.test.ts`,
+Phase 5) gained a storage variant proving the never-block contract in Phase 6 (see
+Video-E2E). Browser-contract covers the OPFS atomic-write probes, the real-OPFS
+storage suites, component tests for the product screens, and since Phase 7 the
+portability/nudge/orientation suites plus the two-leg E2E round trip through the real
+App (see Browser-contract). The webgpu (SwiftShader) CI leg from Phases 1–2 is
+**retired** per [ADR 0009](decisions/0009-cpu-pipeline-webcodecs.md): the reduction
+stage is pure TypeScript over WebCodecs capture, so determinism and goldens are node
+tests; the `src/core/gpu/` and `src/core/cpu-pipeline/` spike modules remain as
+`/diag` instruments, covered by node unit tests only. The manual device checklist and
+field acceptance protocol are committed as runbooks (see Manual device checklist);
+their execution is the remaining v1 sign-off.
 
 ## Unit
 
 - **Verifies:** framework-free core logic — routing decisions, capability-report shaping,
   and (as they arrive) lap semantics, record computation, the crossing state machine,
   speech formatting, storage-independent domain types. Pure functions and injected
-  dependencies, no real platform APIs.
+  dependencies, no real platform APIs. Since Phase 7 this includes the import
+  fuzz/property suite (`src/core/storage/import-fuzz.test.ts`, seeded): truncation at
+  every byte offset, hundreds of random type-swap mutations, hostile and huge
+  structures, prototype-pollution keys — pinning the invariant that `parseImportFile`
+  returns a valid envelope or throws `StorageError`, never anything else.
 - **Does not:** touch the DOM, real OPFS, real camera, or Svelte components. Anything
   needing a real browser API belongs in browser-contract.
 - **Where:** Node (Vitest), locally and in CI. Fast; the default level.
 - **Gating:** yes. Runs in `check` and CI on every change.
 - **Introduced:** Phase 1, and grows every phase.
+- **Build-output special case:** `src/core/precache.test.ts` asserts the built service
+  worker's precache manifest (`dist/sw.js`) covers the full offline shell (index, JS/CSS
+  bundles, the `/lab` fixture clip, web manifest, icons); it self-skips when no build
+  output exists, and CI runs it after the build (`bun run test:precache`, ci.yml check
+  job) with `PRECACHE_REQUIRED=1`, which turns a missing `dist/sw.js` into a failure
+  instead of a skip.
 
 ## Browser-contract
 
@@ -50,7 +66,19 @@ still pending, and its section describes the intended shape.
   the product-screen tests: course CRUD (`course-crud.browser.test.ts`), session/course
   review views (`review-views.browser.test.ts`), the persisted fly flow including the
   mid-session durability checkpoint (`fly.browser.test.ts`), and storage error and
-  read-only state surfacing, all mounting the real components).
+  read-only state surfacing, all mounting the real components). Phase 7 added the
+  portability suites — import UI merge counts, error surfacing, and share-sheet
+  delivery recording (`portability.browser.test.ts`), export delivery selection over
+  injected fake navigators (`deliver-export.browser.test.ts`), the post-session
+  backup nudge (`backup-nudge.browser.test.ts`), and the orientation-mismatch
+  invalidation flow (`fly-orientation.browser.test.ts`) — plus the E2E round trip
+  (`e2e.browser.test.ts`): one Chromium-gated test drives the **real App** through
+  two legs — a phone leg (create a course via the form → fly with a fake camera and
+  injected crossings → discard a lap → stop → review records → export, the delivered
+  file's content asserted exactly) and a fresh-storage desktop leg (import that file
+  → identical records and lap tables → idempotent all-skip re-import). This is the
+  adapted stand-in for the plan's standalone Playwright E2E (see the Phase 7 notes'
+  deviations).
 - **Does not:** verify reduction arithmetic (that is determinism & golden, in node) or
   assert full product flows over recorded video (that is video-E2E). Nor does it own
   the whole storage test story: the same contract suite (`storage-contract.ts`) also
@@ -150,8 +178,11 @@ still pending, and its section describes the intended shape.
   cross-device matrix. Field acceptance is judged here.
 - **Does not:** run unattended or block a merge. It is a human protocol with signed-off results,
   not code.
-- **Where:** on physical devices, from the deployed URL, by a person following a written
-  checklist. Android Chrome gates; iOS is best-effort per [ADR 0006](decisions/0006-ios-best-effort.md).
+- **Where:** on physical devices, from the deployed URL, by a person following the
+  committed runbooks — [`runbooks/device-matrix-checklist.md`](runbooks/device-matrix-checklist.md)
+  (the cross-device smoke matrix) and [`runbooks/field-acceptance.md`](runbooks/field-acceptance.md)
+  (the ±1-frame accuracy protocol with stopwatch/video ground truth). Android Chrome
+  gates; iOS is best-effort per [ADR 0006](decisions/0006-ios-best-effort.md).
 - **Gating:** release-gating by sign-off, not CI-gating.
 - **Introduced:** device-matrix items begin in Phase 2 (the on-device spike); field-acceptance
   sign-off is a Phase 7 exit item.

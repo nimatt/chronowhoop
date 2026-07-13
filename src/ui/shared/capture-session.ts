@@ -37,6 +37,13 @@ export interface CaptureSession {
   // detector-attachment.ts).
   setPipelinePause(paused: boolean): void
 
+  // Discards the pipeline's EMA background model (reseeded from the next
+  // frame); no-op while capture is stopped. For callers that know the scene
+  // the background was learned from is no longer valid — setRoi does this
+  // internally, the fly flow's orientation-restore path calls it directly
+  // (the background absorbed rotated frames during the mismatch).
+  resetBackground(): void
+
   // Non-reactive reads for 1 Hz snapshots; both survive stopCapture() (the
   // last run's pipeline and source are retained until the next start) so the
   // ring clip stays exportable and the stats readout stays legible after a

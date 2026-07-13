@@ -1,10 +1,51 @@
 <script lang="ts">
   import { sessionRecords } from '../../core/records/records'
+  import { shouldNudgeBackup } from '../../core/storage/backup-nudge'
+  import type { StorageContext } from '../data/storage-context'
+  import { exportOutcomeNotice, runExport, type ExportNotice } from '../shared/export-action'
   import { formatLapSeconds } from './fly-format'
   import type { FlySession } from './fly-session'
   import LapTable from './LapTable.svelte'
 
-  let { session }: { session: FlySession } = $props()
+  let { session, context }: { session: FlySession; context: StorageContext } = $props()
+
+  // Backup nudge (plan 07 item 3): after a stopped session, gently prompt for
+  // an export when unexported data exists and the last export is not recent
+  // (shouldNudgeBackup). The summaries are refreshed at mount because flights
+  // persist behind SessionsRepo's back (the invalidation rule) — the session
+  // file exists from arm time, so the just-flown session is included. The
+  // clock is captured once at mount; a successful export flows back through
+  // settings.lastExportAt (reactive), retracting the nudge.
+  const nudgeNow = Date.now()
+  let summariesRefreshed = $state(false)
+  // svelte-ignore state_referenced_locally
+  void context.coursesRepo.ensureLoaded()
+  // svelte-ignore state_referenced_locally
+  void context.sessionsRepo.refresh().then(() => {
+    summariesRefreshed = true
+  })
+  const showNudge = $derived(
+    summariesRefreshed &&
+      context.coursesRepo.loaded &&
+      shouldNudgeBackup({
+        sessionSummaries: context.sessionsRepo.summaries,
+        ...(context.coursesRepo.settings.lastExportAt !== undefined
+          ? { lastExportAt: context.coursesRepo.settings.lastExportAt }
+          : {}),
+        now: nudgeNow,
+      }),
+  )
+
+  let exporting = $state(false)
+  let exportNotice = $state<ExportNotice | null>(null)
+
+  async function exportNow(): Promise<void> {
+    if (exporting) return
+    exporting = true
+    exportNotice = null
+    exportNotice = exportOutcomeNotice(await runExport(context))
+    exporting = false
+  }
 
   const laps = $derived(session.laps)
   const records = $derived(sessionRecords(laps))
@@ -81,6 +122,18 @@
   </dl>
 </header>
 
+{#if showNudge}
+  <div class="backup-nudge" role="status">
+    <span>Some sessions aren’t backed up yet — export your data to keep them safe.</span>
+    <button onclick={() => void exportNow()} disabled={exporting}>
+      {exporting ? 'Exporting…' : 'Export now'}
+    </button>
+  </div>
+{/if}
+{#if exportNotice !== null}
+  <p class={exportNotice.ok ? 'export-ok' : 'error'} role="status">{exportNotice.text}</p>
+{/if}
+
 <LapTable {laps} />
 
 <label class="note">
@@ -141,6 +194,30 @@
     background: #3f2d15;
     border: 1px solid #7c5b2b;
     color: #ffcf8a;
+    overflow-wrap: anywhere;
+  }
+
+  .backup-nudge {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+    margin: 0.75rem 0;
+    padding: 0.6rem 0.8rem;
+    border-radius: 0.375rem;
+    background: #16233c;
+    border: 1px solid #2c3850;
+    font-size: 0.95rem;
+  }
+
+  .backup-nudge button {
+    flex-shrink: 0;
+  }
+
+  .export-ok {
+    margin: 0.5rem 0;
+    font-size: 0.9rem;
+    color: #86efac;
     overflow-wrap: anywhere;
   }
 

@@ -411,7 +411,7 @@ function storageAsInterface(storage: MemoryStorage): Storage {
     saveSession: (session) => storage.saveSession(session),
     latestSessionForCourse: (courseId) => storage.latestSessionForCourse(courseId),
     exportAll: () => storage.exportAll(),
-    importAll: () => storage.importAll(),
+    importAll: (envelope) => storage.importAll(envelope),
     persistenceStatus: () => storage.persistenceStatus(),
   }
 }

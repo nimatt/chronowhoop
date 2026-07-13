@@ -35,6 +35,12 @@
   })
 
   const course = $derived(session === null ? undefined : coursesRepo.courseById(session.courseId))
+  // Orphan sessions (courseId matching no course — an imported session whose
+  // course never arrived, storage.md merge rules) render with the "unknown
+  // course" placeholder; while courses are still loading, stay neutral.
+  const courseLabel = $derived(
+    course !== undefined ? course.name : coursesRepo.loaded ? 'Unknown course' : 'Session',
+  )
   const records = $derived(session === null ? null : sessionRecords(session.laps))
   const noteDirty = $derived(session !== null && note !== session.note)
 
@@ -74,36 +80,44 @@
     </p>
     <a href={hashFor({ id: 'home' })}>Back to courses</a>
   {:else}
-    <h1>{course === undefined ? 'Session' : course.name}</h1>
+    <h1>{courseLabel}</h1>
     <p class="meta">{formatDateTime(session.startedAt)}</p>
 
-    {#if records !== null}
-      <RecordsSummary {records} lapCount={session.laps.length} />
-    {/if}
+    <!-- Stacked on the phone; records/note beside the lap table on desktop
+         (the review story — 48rem breakpoint, see App.svelte). -->
+    <div class="review-columns">
+      <div class="session-info">
+        {#if records !== null}
+          <RecordsSummary {records} lapCount={session.laps.length} />
+        {/if}
 
-    <label class="note">
-      <span>Note</span>
-      <textarea rows="2" placeholder="e.g. new props, windy day" bind:value={note}></textarea>
-    </label>
-    {#if noteDirty || savingNote}
-      <div class="controls">
-        <button
-          class="primary"
-          onclick={() => void saveNote()}
-          disabled={savingNote || context.readOnly}
-        >
-          {savingNote ? 'Saving…' : 'Save note'}
-        </button>
-        {#if context.readOnly}
-          <span class="hint">Read-only: another tab is active.</span>
+        <label class="note">
+          <span>Note</span>
+          <textarea rows="2" placeholder="e.g. new props, windy day" bind:value={note}></textarea>
+        </label>
+        {#if noteDirty || savingNote}
+          <div class="controls">
+            <button
+              class="primary"
+              onclick={() => void saveNote()}
+              disabled={savingNote || context.readOnly}
+            >
+              {savingNote ? 'Saving…' : 'Save note'}
+            </button>
+            {#if context.readOnly}
+              <span class="hint">Read-only: another tab is active.</span>
+            {/if}
+          </div>
+        {/if}
+        {#if noteError !== null}
+          <p class="notice-error">Could not save the note: {noteError}</p>
         {/if}
       </div>
-    {/if}
-    {#if noteError !== null}
-      <p class="notice-error">Could not save the note: {noteError}</p>
-    {/if}
 
-    <LapTable laps={session.laps} />
+      <div class="session-laps">
+        <LapTable laps={session.laps} />
+      </div>
+    </div>
   {/if}
 </main>
 
@@ -172,5 +186,18 @@
   .hint {
     opacity: 0.75;
     font-size: 0.9rem;
+  }
+
+  @media (min-width: 48rem) {
+    main {
+      max-width: 64rem;
+    }
+
+    .review-columns {
+      display: grid;
+      grid-template-columns: minmax(18rem, 24rem) minmax(0, 44rem);
+      gap: 2.5rem;
+      align-items: start;
+    }
   }
 </style>

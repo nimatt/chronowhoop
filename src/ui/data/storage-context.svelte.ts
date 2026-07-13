@@ -1,6 +1,7 @@
 import { OpfsStorage, type QuarantineEvent } from '../../core/storage/opfs-storage'
 import type { PersistenceStatus, Storage } from '../../core/storage/storage'
 import { CoursesRepo, SessionsRepo, filterSessionsForCourse, findCourseById } from './repos'
+import { storageReadOnly } from './storage-context'
 import type {
   CoursesRepoView,
   QuarantineNotice,
@@ -19,22 +20,10 @@ export interface StorageContextOptions {
   newId?: () => string
 }
 
-// Optional capability members some Storage implementations carry (OpfsStorage
-// today). Checked structurally rather than via `instanceof OpfsStorage`, so
-// any storage — a future sync-backed one, a read-only test double — can opt
-// in without this module naming it.
-interface StorageCapabilities {
-  readOnly?: unknown
-  dispose?: unknown
-}
-
-function storageReadOnly(storage: Storage): boolean {
-  const { readOnly } = storage as StorageCapabilities
-  return typeof readOnly === 'boolean' ? readOnly : false
-}
-
+// Optional capability member some Storage implementations carry (OpfsStorage
+// today), checked structurally like storageReadOnly (storage-context.ts).
 function disposeStorage(storage: Storage): void {
-  const { dispose } = storage as StorageCapabilities
+  const { dispose } = storage as { dispose?: unknown }
   if (typeof dispose === 'function') dispose.call(storage)
 }
 

@@ -184,6 +184,9 @@ export function createCaptureSession(options: CaptureSessionOptions = {}): Captu
     setPipelinePause(paused) {
       pipeline?.setPause(paused)
     },
+    resetBackground() {
+      pipeline?.resetBackground()
+    },
     cameraStats: () => cameraSource?.stats() ?? null,
     ringBuffer: () => pipeline?.ringBuffer ?? null,
     addFrameListener(listener) {

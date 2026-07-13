@@ -7,7 +7,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import type { Course, Lap, Session } from '../domain/types'
 import { DEFAULT_CROSSING_DETECTOR_CONFIG } from '../detection/crossing-detector'
 import { DEFAULT_DETECTION_TUNABLES } from '../detection/types'
-import { SCHEMA_VERSION, type AppSettings } from './schema'
+import { SCHEMA_VERSION, type AppSettings, type ExportEnvelope } from './schema'
 import { isNotFoundError, type Storage } from './storage'
 
 export type ContractStorage = Storage & { cleanup?(): Promise<void> | void }
@@ -246,19 +246,123 @@ export function describeStorageContract(name: string, makeStorage: StorageFactor
       })
     })
 
-    describe('import stub and persistence status', () => {
-      // Phase 7 implements import; this pin flips to real merge semantics then.
-      it('importAll rejects (not implemented until Phase 7)', async () => {
-        const envelope = {
+    describe('import (merge by id, storage.md)', () => {
+      function makeEnvelope(overrides: Partial<ExportEnvelope> = {}): ExportEnvelope {
+        return {
           schemaVersion: SCHEMA_VERSION,
           exportedAt: '2026-07-12T00:00:00.000Z',
           courses: [],
           settings: { speechEnabled: true },
           sessions: [],
+          ...overrides,
         }
-        await expect(storage.importAll(envelope)).rejects.toThrow(/not implemented/i)
+      }
+
+      it('into empty storage adds every course and session and reports the counts', async () => {
+        const course = makeCourse()
+        const sessions = [
+          makeSession({ courseId: course.id, startedAt: '2026-07-10T08:00:00.000Z' }),
+          makeSession({ courseId: course.id, startedAt: '2026-07-11T08:00:00.000Z' }),
+        ]
+        const result = await storage.importAll(makeEnvelope({ courses: [course], sessions }))
+
+        expect(result).toEqual({
+          coursesAdded: 1,
+          coursesSkipped: 0,
+          sessionsAdded: 2,
+          sessionsSkipped: 0,
+        })
+        expect((await storage.loadCourses()).courses).toEqual([course])
+        expect(await storage.loadSession(sessions[0].id)).toEqual(sessions[0])
+        expect(await storage.loadSession(sessions[1].id)).toEqual(sessions[1])
       })
 
+      it('adds unknown ids, skips existing ids without overwriting local content', async () => {
+        const localCourse = makeCourse({ name: 'local name' })
+        const localSession = makeSession({ courseId: localCourse.id, note: 'local note' })
+        await storage.saveCourses({ courses: [localCourse], settings: { speechEnabled: true } })
+        await storage.saveSession(localSession)
+
+        const newCourse = makeCourse()
+        const newSession = makeSession({ courseId: newCourse.id })
+        const result = await storage.importAll(
+          makeEnvelope({
+            courses: [{ ...localCourse, name: 'imported name' }, newCourse],
+            sessions: [{ ...localSession, note: 'imported note' }, newSession],
+          }),
+        )
+
+        expect(result).toEqual({
+          coursesAdded: 1,
+          coursesSkipped: 1,
+          sessionsAdded: 1,
+          sessionsSkipped: 1,
+        })
+        expect((await storage.loadCourses()).courses).toEqual([localCourse, newCourse])
+        expect(await storage.loadSession(localSession.id)).toEqual(localSession)
+        expect(await storage.loadSession(newSession.id)).toEqual(newSession)
+      })
+
+      it('re-importing the same file is idempotent: all skips, state unchanged', async () => {
+        const course = makeCourse()
+        const envelope = makeEnvelope({
+          courses: [course],
+          sessions: [makeSession({ courseId: course.id })],
+        })
+        await storage.importAll(envelope)
+        const coursesAfterFirst = await storage.loadCourses()
+        const sessionsAfterFirst = await storage.listSessions()
+
+        const result = await storage.importAll(envelope)
+
+        expect(result).toEqual({
+          coursesAdded: 0,
+          coursesSkipped: 1,
+          sessionsAdded: 0,
+          sessionsSkipped: 1,
+        })
+        expect(await storage.loadCourses()).toEqual(coursesAfterFirst)
+        expect(await storage.listSessions()).toEqual(sessionsAfterFirst)
+      })
+
+      it('local settings always win: imported settings are ignored entirely', async () => {
+        const localSettings: AppSettings = {
+          speechEnabled: false,
+          lastExportAt: '2026-07-01T00:00:00.000Z',
+          lastCourseId: 'local-course',
+        }
+        await storage.saveCourses({ courses: [], settings: localSettings })
+
+        await storage.importAll(
+          makeEnvelope({
+            courses: [makeCourse()],
+            settings: {
+              speechEnabled: true,
+              lastExportAt: '2026-07-12T00:00:00.000Z',
+              lastCourseId: 'imported-course',
+            },
+          }),
+        )
+
+        expect((await storage.loadCourses()).settings).toEqual(localSettings)
+      })
+
+      it('orphan sessions (courseId matching no course) are imported, not dropped', async () => {
+        const orphan = makeSession({ courseId: 'course-nobody-has' })
+        const result = await storage.importAll(makeEnvelope({ sessions: [orphan] }))
+
+        expect(result).toEqual({
+          coursesAdded: 0,
+          coursesSkipped: 0,
+          sessionsAdded: 1,
+          sessionsSkipped: 0,
+        })
+        expect(await storage.loadSession(orphan.id)).toEqual(orphan)
+        expect((await storage.loadCourses()).courses).toEqual([])
+      })
+    })
+
+    describe('persistence status', () => {
       it('persistenceStatus reports a boolean persisted flag', async () => {
         const status = await storage.persistenceStatus()
         expect(typeof status.persisted).toBe('boolean')

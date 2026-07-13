@@ -8,6 +8,7 @@
     "build": "vite build",
     "preview": "vite preview",
     "test": "vitest run --project unit",
+    "test:precache": "vitest run --project unit src/core/precache.test.ts",
     "test:browser": "vitest run --project browser",
     "test:browser-webkit": "vitest run --project browser-webkit",
     "test:all": "vitest run",

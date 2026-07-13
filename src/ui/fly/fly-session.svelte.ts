@@ -18,6 +18,13 @@ import {
 } from '../shared/detector-attachment'
 import type { ArmedClockBase, FlyPhase, FlySession, StopCause } from './fly-session'
 import { wallClock } from './fly-session'
+import {
+  ORIENTATION_QUERY,
+  orientationEffect,
+  orientationFromPortraitMatch,
+  type Orientation,
+  type OrientationMatchMedia,
+} from './orientation-binding'
 
 export interface FlySessionOptions {
   // The persisted course the flow runs against (loaded before creation).
@@ -40,6 +47,9 @@ export interface FlySessionOptions {
   // Test seam: the browser test injects a mediaDevices whose getUserMedia
   // resolves to a canvas captureStream; production uses the real one.
   mediaDevices?: CameraMediaDevicesLike
+  // Test seam for the orientation binding (detection.md "Orientation"):
+  // production uses window.matchMedia('(orientation: portrait)').
+  matchMedia?: OrientationMatchMedia
 }
 
 // Created per mount of FlyFlow.svelte — navigating away tears everything down
@@ -65,6 +75,17 @@ export function createFlySession(options: FlySessionOptions): FlySession {
   let interruptionNotice = $state(false)
   let audioPrimed = $state(audio.primed)
   let audioError = $state<string | null>(null)
+
+  // Orientation app-state binding (detection.md "Orientation"): bound when
+  // the camera starts, released when it stops. Decision logic is pure
+  // (orientation-binding.ts); this module only executes the effects.
+  const orientationQuery = (options.matchMedia ?? ((query) => window.matchMedia(query)))(
+    ORIENTATION_QUERY,
+  )
+  const currentOrientation = (): Orientation =>
+    orientationFromPortraitMatch(orientationQuery.matches)
+  let boundOrientation = $state<Orientation | null>(null)
+  let orientationMismatch = $state(false)
 
   // Reactive mirror of the persister's state (low-frequency; the persister
   // itself never blocks the crossing path).
@@ -101,6 +122,8 @@ export function createFlySession(options: FlySessionOptions): FlySession {
       } else if (phase === 'test') {
         stopTestMode()
       }
+      // Capture is down — no ROI in use, nothing left to bind.
+      releaseOrientationBinding()
     },
     // The tunables slider applies live to the pipeline; the detector follows.
     onTunablesUpdated: (partial) => {
@@ -179,6 +202,57 @@ export function createFlySession(options: FlySessionOptions): FlySession {
     }
   }
 
+  // Capture start binds the orientation; capture end (deliberate stop or
+  // external death) releases it.
+  async function startCapture(): Promise<void> {
+    await capture.startCapture()
+    if (capture.captureRunning) {
+      boundOrientation = currentOrientation()
+      orientationMismatch = false
+    }
+  }
+
+  function stopCapture(): void {
+    capture.stopCapture()
+    releaseOrientationBinding()
+  }
+
+  function releaseOrientationBinding(): void {
+    boundOrientation = null
+    orientationMismatch = false
+  }
+
+  // detection.md "Orientation": rotating away from the bound orientation
+  // warns and honestly invalidates detection — the detector is DETACHED (not
+  // merely paused: pausing would freeze the EMA deliberately, while the
+  // rotated frames make both background and strip geometry meaningless), so
+  // crossings during the mismatch are lost. Restoring the orientation resets
+  // the background (it adapted to rotated frames while the detector was off)
+  // and re-attaches a fresh detector where one belongs (test/armed).
+  const onOrientationChange = () => {
+    const binding =
+      boundOrientation === null ? null : { bound: boundOrientation, mismatch: orientationMismatch }
+    const effect = orientationEffect(binding, currentOrientation())
+    if (effect === 'none') return
+    orientationMismatch = effect === 'invalidate'
+    if (effect === 'invalidate') {
+      detachDetection?.()
+    } else {
+      capture.resetBackground()
+      if (phase === 'test' || phase === 'armed') {
+        // attachDetection builds a fresh (quiet) detector — this IS the
+        // detector reset across the gap.
+        attachDetection()
+      }
+      if (phase === 'armed') {
+        // Same meaning as the page-hidden notice: crossings during the gap
+        // were not detected.
+        interruptionNotice = true
+      }
+    }
+  }
+  orientationQuery.addEventListener('change', onOrientationChange)
+
   function primeAudio(): Promise<void> {
     return audio.primeOnGesture().then(
       () => {
@@ -193,6 +267,9 @@ export function createFlySession(options: FlySessionOptions): FlySession {
 
   function startTestMode(): void {
     if (phase !== 'setup' || !capture.captureRunning) return
+    // Detection is invalid while the orientation is mismatched (the UI
+    // disables the button and shows the rotate-back warning).
+    if (orientationMismatch) return
     testCrossingCount = 0
     engine.startTest(course)
     attachDetection()
@@ -214,6 +291,9 @@ export function createFlySession(options: FlySessionOptions): FlySession {
     // authoritative. A hung storage keeps pending true forever — honest,
     // since the new session's writes would hang the same way.
     if (persister.state.pending) return
+    // Rotated away from the setup orientation: the ROI is meaningless, so
+    // arming is refused until the orientation is restored (detection.md).
+    if (orientationMismatch) return
     attachDetection()
     // Arming from test mode reuses the already-attached detector: a candidate
     // begun in test mode must not carry into the armed session and start its
@@ -246,6 +326,12 @@ export function createFlySession(options: FlySessionOptions): FlySession {
     if (phase !== 'armed') return
     engine.stop()
     detachDetection?.()
+    // Stopping while still rotated: the restore path (which normally raises
+    // the notice) never ran, but the detector WAS detached for part of the
+    // session — the stopped panel must still show that laps during the gap
+    // were not detected. A mismatch while armed always means a gap: arming is
+    // refused while mismatched, so the rotation happened after arm.
+    if (orientationMismatch) interruptionNotice = true
     announcer.reset()
     // Fire-and-forget: the stopped panel reads persisterState (pending /
     // lastError) for the saved / unsaved-laps indicator; flush() never
@@ -323,11 +409,12 @@ export function createFlySession(options: FlySessionOptions): FlySession {
     get wakeLockState() {
       return capture.wakeLockState
     },
-    startCapture: capture.startCapture,
-    stopCapture: capture.stopCapture,
+    startCapture,
+    stopCapture,
     setRoi: capture.setRoi,
     updateTunables: capture.updateTunables,
     setPipelinePause: capture.setPipelinePause,
+    resetBackground: capture.resetBackground,
     cameraStats: capture.cameraStats,
     ringBuffer: capture.ringBuffer,
     addFrameListener: capture.addFrameListener,
@@ -358,6 +445,12 @@ export function createFlySession(options: FlySessionOptions): FlySession {
     get interruptionNotice() {
       return interruptionNotice
     },
+    get boundOrientation() {
+      return boundOrientation
+    },
+    get orientationMismatch() {
+      return orientationMismatch
+    },
     get audioPrimed() {
       return audioPrimed
     },
@@ -376,7 +469,13 @@ export function createFlySession(options: FlySessionOptions): FlySession {
     },
     primeAudio,
     armedClockBase: () => clockBase,
+    get detectionAttached() {
+      return detachDetection !== null
+    },
     injectCrossing(event: CrossingEvent) {
+      // Mirrors production invalidation: during an orientation mismatch the
+      // detector is detached, so no crossing can reach the engine.
+      if (orientationMismatch) return
       engine.onCrossing(event)
     },
     destroy() {
@@ -388,6 +487,7 @@ export function createFlySession(options: FlySessionOptions): FlySession {
       void persister.flush()
       capture.destroy()
       document.removeEventListener('visibilitychange', onVisibilityChange)
+      orientationQuery.removeEventListener('change', onOrientationChange)
     },
   }
 }

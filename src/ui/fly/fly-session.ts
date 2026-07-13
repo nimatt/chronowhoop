@@ -3,6 +3,7 @@ import type { Course, Lap } from '../../core/domain/types'
 import type { PersisterState } from '../../core/session/session-persister'
 import type { WallClock } from '../../core/session/session-engine'
 import type { CaptureSession } from '../shared/capture-session'
+import type { Orientation } from './orientation-binding'
 
 // The product timer flow: setup (camera + ROI + trigger calibration) → test
 // (beep per valid crossing, records nothing) → armed (laps + announcements) →
@@ -56,8 +57,18 @@ export interface FlySession extends CaptureSession {
   readonly persisterState: PersisterState
   readonly stopCause: StopCause | null
   // True after the page was hidden while armed: detection was interrupted and
-  // laps during the gap were not detected. Dismissable.
+  // laps during the gap were not detected. Dismissable. Also raised when an
+  // armed session's orientation is restored after a mismatch — same meaning:
+  // crossings during the gap were lost.
   readonly interruptionNotice: boolean
+  // The device orientation the running capture was started in (detection.md
+  // "Orientation": the ROI is bound to it). Null while the camera is off.
+  readonly boundOrientation: Orientation | null
+  // True while the device has left the bound orientation: the UI shows a
+  // rotate-back warning and detection is invalidated (the detector is
+  // detached — crossings during the mismatch are lost) until restored.
+  // Arming and test mode are refused while mismatched.
+  readonly orientationMismatch: boolean
   readonly audioPrimed: boolean
   readonly audioError: string | null
 
@@ -81,9 +92,17 @@ export interface FlySession extends CaptureSession {
   // per-frame bridge rule). Null while armed until the first valid crossing.
   armedClockBase(): ArmedClockBase | null
 
+  // Test seam (browser tests): whether a crossing detector is currently
+  // attached to the capture chain. Non-reactive — read it fresh after driving
+  // an event. Lets tests observe the orientation invalidation EXECUTING
+  // (detach on mismatch, re-attach on restore) rather than only the parallel
+  // injectCrossing guard below.
+  readonly detectionAttached: boolean
+
   // Test seam (browser tests): feeds a crossing event straight into the
   // session engine, bypassing camera/detector — driving real optical
   // crossings through a captureStream is too flaky for CI. Not used by
-  // product code.
+  // product code. Dropped while orientationMismatch, mirroring the detached
+  // detector (no crossing can reach the engine during a mismatch).
   injectCrossing(event: CrossingEvent): void
 }

@@ -5,6 +5,7 @@
 // contract suite pins it for both).
 
 import type { IsoDateString, Session } from '../domain/types'
+import { importIntoStorage } from './import'
 import { defaultAppSettings, SCHEMA_VERSION, type ExportEnvelope } from './schema'
 import {
   compareSessionRecency,
@@ -79,8 +80,8 @@ export class MemoryStorage implements Storage {
     return { schemaVersion: SCHEMA_VERSION, exportedAt: this.now(), courses, settings, sessions }
   }
 
-  importAll(): Promise<ImportResult> {
-    return Promise.reject(new Error('importAll is not implemented until Phase 7'))
+  importAll(envelope: ExportEnvelope): Promise<ImportResult> {
+    return importIntoStorage(this, envelope)
   }
 
   persistenceStatus(): Promise<PersistenceStatus> {

@@ -163,7 +163,12 @@
 </div>
 
 <div class="controls actions">
-  <button onclick={() => session.startTestMode()} disabled={!session.captureRunning}>
+  <!-- Test mode stays available read-only (it records nothing), but not
+       during an orientation mismatch — detection itself is invalid then. -->
+  <button
+    onclick={() => session.startTestMode()}
+    disabled={!session.captureRunning || session.orientationMismatch}
+  >
     Test mode
   </button>
   <button class="primary" onclick={arm} disabled={!session.captureRunning || armDisabled}>

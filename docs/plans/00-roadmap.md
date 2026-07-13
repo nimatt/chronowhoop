@@ -16,7 +16,7 @@ Seven phases, riskiest-first. Every phase ends with something demoable on a real
 | 4 | [Crossing detection](04-crossing-detection.md) | Precisely specified, fixture-validated crossing state machine; standing at the gate, test mode beeps on every correct-direction crossing and never on noise |
 | 5 | [Flyable timer](05-flyable-timer.md) | Arm, fly, hear lap times spoken, discard bad laps — a genuinely usable (in-memory only) timer at the track, with the full loop under CI |
 | 6 | [Persistence + product UI](06-persistence-product-ui.md) | Courses, durable OPFS sessions surviving mid-session crashes, working export-as-backup, calibration/setup productized, session and course review with records |
-| 7 | [PWA, portability, v1 hardening](07-pwa-portability-v1.md) | Installable, fully offline, export/import round trip, device-matrix and field acceptance passed — v1 ships |
+| 7 | [PWA, portability, v1 hardening](07-pwa-portability-v1.md) | Installable, fully offline, export/import round trip, device-matrix and field acceptance passed — v1 ships (device-matrix + field acceptance: documents committed, execution pending — field items) |
 
 ## Sequencing rationale
 
@@ -80,4 +80,4 @@ The five round-table experts (vision pipeline, frontend/PWA, storage, quality, d
 
 **Phase 6 — Persistence + product UI:** contract suite green on MemoryStorage + OpfsStorage (Chromium; WebKit informational) incl. crash-simulation and quarantine; mid-phase checkpoint: tab kill mid-session loses at most the last lap; slow-storage fake proves the never-block contract; working export; iOS install-before-data guidance live (dropped — ADR 0008: export/import is the migration path; no iOS device); course CRUD, productized setup, session/course review all work on-device.
 
-**Phase 7 — v1:** airplane-mode installed-PWA full session on Android (iOS best-effort); export/import round trip with fuzz-tested import; Playwright E2E green; desktop layout pass with the import-and-review story; device-matrix checklist (incl. on-device GPU self-test) and field acceptance protocol signed off; runbooks committed.
+**Phase 7 — v1:** airplane-mode installed-PWA full session on Android (iOS best-effort — a manual device-matrix item, pending field execution); export/import round trip with fuzz-tested import; Playwright E2E green (delivered as the vitest browser-mode E2E round trip plus the node precache-completeness test — no standalone Playwright, and no automated offline-reload test; that is the manual airplane-mode item); desktop layout pass with the import-and-review story; device-matrix checklist (incl. on-device GPU self-test) and field acceptance protocol signed off (documents committed; execution pending — field); runbooks committed.

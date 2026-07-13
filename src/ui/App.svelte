@@ -1,7 +1,10 @@
 <script lang="ts">
+  import type { CameraMediaDevicesLike } from '../core/camera/camera-service'
   import { checkCapabilities, type CapabilityReport } from '../core/capabilities/capabilities'
   import { routeFromHash, shouldShowUnsupportedScreen } from '../core/routing/route'
   import { createStorageContext, type StorageContextOptions } from './data/storage-context.svelte'
+  import type { FlySession } from './fly/fly-session'
+  import { initPwaInstall } from './pwa-install.svelte'
   import CourseForm from './screens/CourseForm.svelte'
   import CourseView from './screens/CourseView.svelte'
   import Home from './screens/Home.svelte'
@@ -12,13 +15,24 @@
   import Unsupported from './screens/Unsupported.svelte'
   import UpdateBanner from './UpdateBanner.svelte'
 
+  // mediaDevices/onsession are the browser E2E's fly-route seams (the same
+  // ones Fly.svelte already exposes for its own tests); the real page passes
+  // neither.
   let {
     check = checkCapabilities,
     createStorage,
+    mediaDevices,
+    onsession,
   }: {
     check?: () => Promise<CapabilityReport>
     createStorage?: StorageContextOptions['createStorage']
+    mediaDevices?: CameraMediaDevicesLike
+    onsession?: (session: FlySession) => void
   } = $props()
+
+  // beforeinstallprompt fires once, early — register at startup, declared
+  // here rather than left to whichever screen happens to import the module.
+  initPwaInstall()
 
   let route = $state(routeFromHash(location.hash))
   let report = $state<CapabilityReport | null>(null)
@@ -59,7 +73,7 @@
 {:else if route.id === 'fly'}
   <!-- Keyed: Fly resolves its course and prefill once per mount. -->
   {#key route.courseId}
-    <Fly {context} courseId={route.courseId} />
+    <Fly {context} courseId={route.courseId} {mediaDevices} {onsession} />
   {/key}
 {:else if route.id === 'session'}
   {#key route.sessionId}
@@ -96,6 +110,11 @@
     font-family: system-ui, sans-serif;
   }
 
+  /* Phone-first: 40rem is every screen's default width. Desktop breakpoint is
+     48rem (≈768px); custom properties cannot parametrize media queries, so the
+     review screens (Home, CourseView, SessionView) each repeat that literal in
+     their own min-width query to widen themselves. The fly flow stays
+     phone-first on purpose — it is a phone-beside-the-gate flow. */
   :global(main) {
     max-width: 40rem;
     margin: 0 auto;

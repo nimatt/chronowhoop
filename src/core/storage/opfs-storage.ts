@@ -19,6 +19,7 @@
 // quarantine files are kept on purpose, and reads skip every non-`.json` name.
 
 import type { IsoDateString, Session } from '../domain/types'
+import { importIntoStorage } from './import'
 import {
   defaultAppSettings,
   parseCoursesFile,
@@ -489,8 +490,8 @@ export class OpfsStorage implements Storage {
     return { schemaVersion: SCHEMA_VERSION, exportedAt: this.now(), courses, settings, sessions }
   }
 
-  importAll(): Promise<ImportResult> {
-    return Promise.reject(new Error('importAll is not implemented until Phase 7'))
+  importAll(envelope: ExportEnvelope): Promise<ImportResult> {
+    return importIntoStorage(this, envelope)
   }
 
   async persistenceStatus(): Promise<PersistenceStatus> {
