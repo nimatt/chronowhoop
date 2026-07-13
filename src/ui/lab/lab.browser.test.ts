@@ -65,6 +65,7 @@ describe('Lab screen', () => {
     for (const heading of [
       'Live pipeline',
       'Tunables',
+      'Test mode',
       'Recorder',
       'Annotation stepper',
       'Self-test',
@@ -73,6 +74,11 @@ describe('Lab screen', () => {
     }
     expect(text()).toContain('Start the camera to run the live pipeline')
     expect(text()).toContain('Load a recorded .cwclip')
+
+    // Test mode and the trigger suggestion need a running capture.
+    expect(buttonByText('Start test mode').disabled).toBe(true)
+    expect(buttonByText('Stop test mode').disabled).toBe(true)
+    expect(buttonByText('Suggest trigger').disabled).toBe(true)
 
     // The self-test auto-runs: fetch of the bundled fixture asset + pure
     // compute — a real end-to-end check that the served bundle computes what
@@ -208,6 +214,96 @@ describe.runIf(typeof defaultMediaStreamTrackProcessor() === 'function')(
           expect(buttonByText('Start camera + pipeline').disabled).toBe(false),
         )
         expect(buttonByText('Stop').disabled).toBe(true)
+      },
+      30000,
+    )
+
+    it(
+      'test mode arms over live capture, suggest-trigger applies a level, and capture stop auto-stops it',
+      async () => {
+        const { mediaDevices } = startAnimatedScene()
+        instance = mount(Lab, { target: container, props: { mediaDevices } })
+        await waitForText('Start the camera to run the live pipeline')
+
+        buttonByText('Start camera + pipeline').click()
+        await vi.waitFor(() => expect(emittedCount()).toBeGreaterThan(0), { timeout: 15000 })
+        await vi.waitFor(() => expect(buttonByText('Start test mode').disabled).toBe(false))
+
+        buttonByText('Start test mode').click()
+        await vi.waitFor(() => expect(buttonByText('Stop test mode').disabled).toBe(false))
+        expect(buttonByText('Start test mode').disabled).toBe(true)
+        // The live crossingInProgress indicator renders only while armed.
+        await waitForText('crossing:')
+
+        // The suggestion needs ~3 s of observed capture time; the moving-block
+        // scene is not quiet, so only the value's existence (and its clamped
+        // range) is deterministic — not its magnitude.
+        buttonByText('Suggest trigger').click()
+        await vi.waitFor(() => expect(text()).toContain('suggested trigger level'), {
+          timeout: 20000,
+        })
+        const match = /suggested trigger level:\s*([\d.]+)/.exec(text())
+        expect(match).not.toBeNull()
+        const suggested = Number(match![1])
+        expect(suggested).toBeGreaterThanOrEqual(0.02)
+        expect(suggested).toBeLessThanOrEqual(0.5)
+
+        // Apply routes the suggestion into the shared tunables (the trigger
+        // slider is the only range input with max="1").
+        buttonByText('Apply').click()
+        const triggerSlider = container.querySelector<HTMLInputElement>(
+          'input[type="range"][max="1"]',
+        )
+        expect(triggerSlider).not.toBeNull()
+        await vi.waitFor(() => expect(Number(triggerSlider!.value)).toBeCloseTo(suggested, 2))
+
+        // Stopping capture auto-stops test mode.
+        buttonByText('Stop').click()
+        await vi.waitFor(() => expect(buttonByText('Stop test mode').disabled).toBe(true))
+        expect(buttonByText('Start test mode').disabled).toBe(true)
+      },
+      45000,
+    )
+
+    it(
+      'test mode arms and stays alive at the trigger slider minimum',
+      async () => {
+        const { mediaDevices } = startAnimatedScene()
+        instance = mount(Lab, { target: container, props: { mediaDevices } })
+        await waitForText('Start the camera to run the live pipeline')
+
+        buttonByText('Start camera + pipeline').click()
+        await vi.waitFor(() => expect(emittedCount()).toBeGreaterThan(0), { timeout: 15000 })
+        await vi.waitFor(() => expect(buttonByText('Start test mode').disabled).toBe(false))
+
+        // CrossingDetector rejects triggerLevel ≤ 0, so the slider minimum
+        // must stay above 0 — and arming at that minimum must not throw.
+        const triggerSlider = container.querySelector<HTMLInputElement>(
+          'input[type="range"][max="1"]',
+        )
+        expect(triggerSlider).not.toBeNull()
+        expect(Number(triggerSlider!.min)).toBeGreaterThan(0)
+        triggerSlider!.value = triggerSlider!.min
+        triggerSlider!.dispatchEvent(new Event('input', { bubbles: true }))
+
+        buttonByText('Start test mode').click()
+        await vi.waitFor(() => expect(buttonByText('Stop test mode').disabled).toBe(false))
+        await waitForText('crossing:')
+
+        // Dragging away and back to the minimum while armed routes through
+        // the live-tracking effect; the panel must survive it.
+        triggerSlider!.value = '0.5'
+        triggerSlider!.dispatchEvent(new Event('input', { bubbles: true }))
+        triggerSlider!.value = triggerSlider!.min
+        triggerSlider!.dispatchEvent(new Event('input', { bubbles: true }))
+        await vi.waitFor(() =>
+          expect(Number(triggerSlider!.value)).toBeCloseTo(Number(triggerSlider!.min), 4),
+        )
+        expect(buttonByText('Stop test mode').disabled).toBe(false)
+        expect(text()).toContain('crossing:')
+
+        buttonByText('Stop').click()
+        await vi.waitFor(() => expect(buttonByText('Stop test mode').disabled).toBe(true))
       },
       30000,
     )

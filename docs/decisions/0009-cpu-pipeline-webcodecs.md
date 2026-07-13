@@ -19,6 +19,8 @@ The capability gate requires `MediaStreamTrackProcessor` + camera + OPFS + speec
 
 **Accepted risk, eyes open:** 14.1 ms full-frame misses the declared ½-frame-interval budget at 60 fps. The leap is taken because (a) the probe copies and reduces the **entire 1280×720 frame**, while production copies only the ROI rect — typically 5–10× less data — and (b) 30 fps operation is the pre-declared threshold floor (accuracy ~±33 ms, constant per-setup bias cancels between laps). **Phase 3 must re-measure the ROI-cropped path on the S22**; if even the cropped path cannot hold the delivered camera rate, the next rung is a WebGL2 fragment-pass reduction (universally supported), not a return to WebGPU.
 
+**Risk resolved (measured 2026-07-13):** `/lab` on the S22 measured the ROI-cropped pipeline at **median 0.5 ms / p95 1.5 ms / max 7.7 ms** per frame — comfortably inside the ½-frame-interval budget even at 60 fps. The full-frame 14.1 ms was indeed copy volume, not compute.
+
 ## Consequences
 
 - **Everything downstream of the reduction is unchanged:** strip-energy semantics, the crossing state machine, session layering, storage. "GPU reduces, CPU decides" becomes "the capture pipeline reduces, the state machine decides" — the seam is the same `FrameSample` stream.

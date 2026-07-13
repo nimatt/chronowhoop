@@ -30,6 +30,12 @@ export interface LabSession {
   setRoi(roi: NormalizedRect): void
   updateTunables(partial: Partial<Omit<DetectionTunables, 'roi'>>): void
 
+  // The EMA-pause seam for the test-mode panel: forwards to the running
+  // pipeline's setPause (next-frame effect; no-op when capture is stopped).
+  // Together with addSampleListener this is enough to satisfy the detector's
+  // PausableFrameSource without handing out the pipeline itself.
+  setPipelinePause(paused: boolean): void
+
   // Non-reactive reads for 1 Hz snapshots; both survive stopCapture() (the
   // last run's pipeline and source are retained until the next start) so the
   // ring clip stays exportable and the stats readout stays legible after a

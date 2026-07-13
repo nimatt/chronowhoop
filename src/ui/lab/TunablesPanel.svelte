@@ -56,9 +56,11 @@
   </label>
   <label>
     <span>trigger level</span>
+    <!-- min matches CrossingDetector's validator (triggerLevel > 0): 0 would
+         throw when test mode feeds the detector. -->
     <input
       type="range"
-      min="0"
+      min="0.01"
       max="1"
       step="0.01"
       value={tunables.triggerLevel}

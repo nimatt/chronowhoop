@@ -165,6 +165,9 @@ export function createLabSession(options: LabSessionOptions = {}): LabSession {
     stopCapture,
     setRoi,
     updateTunables,
+    setPipelinePause(paused) {
+      pipeline?.setPause(paused)
+    },
     cameraStats: () => cameraSource?.stats() ?? null,
     ringBuffer: () => pipeline?.ringBuffer ?? null,
     addFrameListener(listener) {

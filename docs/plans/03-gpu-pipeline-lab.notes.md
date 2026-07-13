@@ -24,6 +24,9 @@ Repo state at start: clean tree at `b53d2a0` (pivot commit).
   with a ≤ ~5 MB total repo budget.
 - **Skipped (field items, tracked in ADR 0008):** ROI-cropped S22 re-measurement (item 13),
   pilot recording (14), corpus (15). On-device /lab verification pending next device session.
+- **Item 13 RESOLVED (user device session, 2026-07-13):** /lab pipeline cost on the S22:
+  median 0.5 ms / p95 1.5 ms / max 7.7 ms — inside the ½-interval budget; ADR 0009's
+  accepted risk is closed (recorded in ADR 0008/0009). Items 14–15 remain open field items.
 
 ## Phase logs
 

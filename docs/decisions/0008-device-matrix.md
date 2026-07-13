@@ -21,7 +21,7 @@ Fill TBD slots during the on-device session; then flip status to accepted.
 | Atomic-write evidence | TBD — cited by the Phase 6 atomic-write ADR | Phase 6 storage |
 | Device-loss facts | TBD | Phase 3 recreation path, Phase 5 interruption handling |
 | iOS OPFS partitioning posture | **Decided now (default, no device): export/import is the migration path.** Phase 6 ships working export regardless. | Phase 6/7 |
-| Pipeline compute substrate (WebGPU vs CPU) | **Decided ([0009](0009-cpu-pipeline-webcodecs.md)): CPU over WebCodecs capture.** WebCodecs route measured 30 proc/s, full-frame total median 14.1 ms / rolling 17.6 ms — misses the ½-interval budget full-frame, accepted with the ROI-crop mitigation and 30 fps floor; Phase 3 re-measures ROI-cropped on device | Phase 3 pipeline, capability gate |
+| Pipeline compute substrate (WebGPU vs CPU) | **Decided ([0009](0009-cpu-pipeline-webcodecs.md)): CPU over WebCodecs capture.** WebCodecs route measured 30 proc/s, full-frame total median 14.1 ms / rolling 17.6 ms — misses the ½-interval budget full-frame, accepted with the ROI-crop mitigation and 30 fps floor; **ROI-cropped re-measured on device 2026-07-13: median 0.5 ms / p95 1.5 ms / max 7.7 ms — PASS** | Phase 3 pipeline, capability gate |
 
 ## Go/no-go thresholds (normative — declared before measurement)
 

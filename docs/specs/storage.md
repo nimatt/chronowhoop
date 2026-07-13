@@ -42,7 +42,13 @@ Every file carries `schemaVersion` (integer). Readers migrate old versions forwa
   "courseId": "…",
   "startedAt": "2026-07-12T10:05:00Z",
   "note": "new props, 300mah",
-  "detectionConfig": { "roi": {…}, "stripCount": 12, "triggerLevel": 0.4, "emaAlpha": 0.05 },
+  // Full detection snapshot: pipeline tunables + crossing-detector config,
+  // composed at the session layer. Phase 6's schema freeze validates this
+  // exact shape.
+  "detectionConfig": {
+    "tunables": { "roi": {…}, "stripCount": 12, "triggerLevel": 0.4, "emaTimeConstantMs": 325, "threshold": 25 },
+    "detector": { "triggerLevel": 0.4, "hysteresisRatio": 0.5, "maxTraversalMs": 1500, … }
+  },
   "laps": [
     { "n": 1, "durationMs": 14320, "completedAt": "2026-07-12T10:06:02.310Z", "status": "valid" },
     { "n": 2, "durationMs": 13980, "completedAt": "2026-07-12T10:06:16.290Z", "status": "discarded" }

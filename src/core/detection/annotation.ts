@@ -4,12 +4,16 @@
 // 4's acceptance gate: `must-pass` clips gate CI; `known-limitation` lets
 // hard field fixtures commit without breaking it.
 
+import type { CrossingDirection } from './crossing-events'
 import { isNonNegativeInteger, isRecord, isStringRecord } from './format-validation'
 
 export const ANNOTATION_FORMAT_VERSION = 1
 
 export type ClipTier = 'must-pass' | 'known-limitation'
-export type CrossingDirection = 'ltr' | 'rtl'
+// Re-exported for annotation consumers; the canonical home is
+// crossing-events.ts (annotations describe the same directions the detector
+// emits).
+export type { CrossingDirection }
 
 export interface ClipCrossing {
   frameIndex: number

@@ -57,7 +57,11 @@ manual device checklist are still planned; those sections describe the intended 
   (dropped-frame sequences match gap-free equivalents); committed fixture byte-pins
   (clip, sidecar, energy JSON) regenerated and compared in `fixtures.test.ts`, rewritten
   with `UPDATE_FIXTURES=1`. Strip energy is an integer hot-pixel count so equality is
-  exact, not tolerance-based.
+  exact, not tolerance-based. Since Phase 4 this category also carries the tier-aware
+  corpus harness (`corpus.test.ts` over `corpus-harness.ts`): every committed clip replays
+  through pipeline + crossing detector in node, must-pass regressions and unexpected
+  known-limitation passes both fail CI (the ratchet ahead of the Phase 5 full-loop
+  video-E2E).
 - **Does not:** make crossing decisions (those are covered by unit tests against
   synthetic strip-energy sequences) and does not prove the deployed bundle computes the
   same on a real device — that is the `/lab` self-test.
@@ -92,8 +96,8 @@ manual device checklist are still planned; those sections describe the intended 
   CPU reduction → crossing state machine → session layer → announcer, asserting detected laps,
   their directions, durations, discards, and the exact announcement decisions. Detection accuracy
   is ±1 frame (anchored in `docs/specs/product.md`); the roadmap sets a ±2-frame end-to-end
-  budget as a working target, pending the authoritative fixture-tolerance definition that lands
-  in `docs/specs/detection.md` (Phase 3/4). Deterministic replay makes this repeatable
+  budget as a working target; the authoritative fixture-tolerance definition is
+  `docs/specs/detection.md` "Corpus match tolerance" (under Fixture formats). Deterministic replay makes this repeatable
   frame-for-frame.
 - **Does not:** replace unit tests (a failure here does not localize the bug) and does not cover
   live-camera behavior — that is what the device spike and manual checklist measure.

@@ -6,6 +6,7 @@
   import LivePipelinePanel from '../lab/LivePipelinePanel.svelte'
   import RecorderPanel from '../lab/RecorderPanel.svelte'
   import SelfTestPanel from '../lab/SelfTestPanel.svelte'
+  import TestModePanel from '../lab/TestModePanel.svelte'
   import TunablesPanel from '../lab/TunablesPanel.svelte'
 
   // mediaDevices is the browser test's capture seam (a canvas captureStream
@@ -23,8 +24,8 @@
 <main>
   <h1>Lab</h1>
   <p class="note">
-    Detection pipeline lab — a debug surface (plan 03), not a product screen. Live reduction,
-    fixture capture, annotation, and the deployed-bundle self-test. Build
+    Detection pipeline lab — a debug surface (plans 03–04), not a product screen. Live reduction,
+    crossing test mode, fixture capture, annotation, and the deployed-bundle self-test. Build
     <code>{__BUILD_ID__}</code>.
   </p>
 
@@ -34,6 +35,10 @@
 
   <DiagPanel title="Tunables">
     <TunablesPanel {session} />
+  </DiagPanel>
+
+  <DiagPanel title="Test mode">
+    <TestModePanel {session} />
   </DiagPanel>
 
   <DiagPanel title="Recorder">
