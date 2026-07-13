@@ -6,7 +6,7 @@
     snapshotRingClip,
   } from '../../core/detection/recorder'
   import { errorText } from '../diag/format'
-  import { downloadBlob } from './download'
+  import { downloadBlob } from '../shared/download'
   import { timestampedFilename } from './filenames'
   import type { CaptureSession } from '../shared/capture-session'
 

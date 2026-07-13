@@ -8,6 +8,28 @@
 
   const laps = $derived(session.laps)
   const records = $derived(sessionRecords(laps))
+
+  // The persister's unsaved-state, surfaced only here — after Stop, never
+  // mid-flight (plan 06 item 5).
+  const persist = $derived(session.persisterState)
+  const saveState = $derived.by((): { kind: 'saving' | 'unsaved' | 'saved'; detail?: string } => {
+    if (persist.pending) {
+      return persist.lastError === undefined
+        ? { kind: 'saving' }
+        : { kind: 'unsaved', detail: `retrying: ${persist.lastError.message}` }
+    }
+    if (persist.lastError !== undefined) {
+      return { kind: 'unsaved', detail: `${persist.lastError.kind}: ${persist.lastError.message}` }
+    }
+    return { kind: 'saved' }
+  })
+
+  // Persisted per input event, not on blur — Back navigation must not lose
+  // the note. The persister coalesces, so per-keystroke calls cost one
+  // structuredClone of a small session each, at most one write in flight.
+  function onNoteInput(event: Event): void {
+    session.setNote((event.currentTarget as HTMLTextAreaElement).value)
+  }
 </script>
 
 {#if session.stopCause === 'camera-lost'}
@@ -27,6 +49,18 @@
 
 <header class="summary">
   <h2>Session over</h2>
+  {#if saveState.kind === 'saved'}
+    <p class="save-status saved">Session saved.</p>
+  {:else if saveState.kind === 'saving'}
+    <p class="save-status pending">Saving session…</p>
+  {:else}
+    <p class="save-status unsaved" role="alert">
+      Some laps may not be saved ({saveState.detail}).
+      {#if persist.savedLapCount !== undefined && persist.savedLapCount > 0}
+        Saved through lap {persist.savedLapCount}.
+      {/if}
+    </p>
+  {/if}
   <dl class="records">
     <div>
       <dt>best lap</dt>
@@ -49,9 +83,15 @@
 
 <LapTable {laps} />
 
-<p class="hint">
-  Nothing is saved yet — this session evaporates on reload (storage arrives in Phase 6).
-</p>
+<label class="note">
+  <span>Session note</span>
+  <textarea
+    rows="2"
+    placeholder="e.g. new props, windy day"
+    value={session.note}
+    oninput={onNoteInput}
+  ></textarea>
+</label>
 
 <div class="controls actions">
   <button class="primary" onclick={() => session.newSession()}>New session</button>
@@ -80,6 +120,47 @@
   .summary h2 {
     margin: 0.5rem 0;
     font-size: 1.3rem;
+  }
+
+  .save-status {
+    margin: 0.25rem 0;
+    font-size: 0.9rem;
+  }
+
+  .save-status.saved {
+    color: #86efac;
+  }
+
+  .save-status.pending {
+    opacity: 0.75;
+  }
+
+  .save-status.unsaved {
+    padding: 0.5rem 0.7rem;
+    border-radius: 0.375rem;
+    background: #3f2d15;
+    border: 1px solid #7c5b2b;
+    color: #ffcf8a;
+    overflow-wrap: anywhere;
+  }
+
+  .note {
+    display: flex;
+    flex-direction: column;
+    gap: 0.3rem;
+    margin: 0.9rem 0;
+    font-size: 0.9rem;
+  }
+
+  .note textarea {
+    background: #16233c;
+    color: #e8edf7;
+    border: 1px solid #2c3850;
+    border-radius: 0.375rem;
+    padding: 0.45rem 0.6rem;
+    font-size: 0.95rem;
+    font-family: inherit;
+    resize: vertical;
   }
 
   .records {

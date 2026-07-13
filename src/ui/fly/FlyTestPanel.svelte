@@ -4,7 +4,17 @@
   import WakeLockWarning from '../shared/WakeLockWarning.svelte'
   import type { FlySession } from './fly-session'
 
-  let { session }: { session: FlySession } = $props()
+  let {
+    session,
+    arm,
+    armDisabled,
+  }: {
+    session: FlySession
+    // FlyFlow's guarded arm + its disable reason rendering; test mode itself
+    // stays available read-only (it records nothing).
+    arm: () => void
+    armDisabled: boolean
+  } = $props()
 
   let barsCanvas: HTMLCanvasElement | null = null
 
@@ -36,7 +46,7 @@
 
 <div class="controls actions">
   <button onclick={() => session.stopTestMode()}>Back to setup</button>
-  <button class="primary" onclick={() => session.arm()} disabled={!session.captureRunning}>
+  <button class="primary" onclick={arm} disabled={!session.captureRunning || armDisabled}>
     Arm
   </button>
 </div>

@@ -92,6 +92,20 @@ export function computeAnnouncementRecords(
   return { isSessionBestLap, isSessionBestThree }
 }
 
+// The lap → announcement hookup, shared by the armed screen (fly-session)
+// and the full-loop test rig (createArmedSessionRig) so the rig provably
+// exercises the exact call the product makes: full-loop-storage.test.ts pins
+// that the announcement decisions this produces are storage-independent.
+// `sessionLaps` is the session's full ordered lap list with `lap` already
+// appended as its last element (what SessionEngine's onLap provides).
+export function announceCompletedLap(
+  announcer: Announcer,
+  lap: Lap,
+  sessionLaps: readonly Lap[],
+): void {
+  announcer.announceLap(lap, computeAnnouncementRecords(sessionLaps, lap))
+}
+
 export type AnnounceAction =
   | 'spoken-immediately'
   | 'queued'

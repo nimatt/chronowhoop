@@ -12,7 +12,7 @@
   import { DetectionPipeline } from '../../core/detection/pipeline'
   import type { LumaFrame } from '../../core/detection/types'
   import { errorText, fmtMs } from '../diag/format'
-  import { downloadBlob } from './download'
+  import { downloadBlob } from '../shared/download'
   import { drawEnergyTimeline } from '../shared/energy-bars'
   import { maxNormalizedEnergy } from '../shared/energy-math'
   import type { CaptureSession } from '../shared/capture-session'

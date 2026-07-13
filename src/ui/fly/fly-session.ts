@@ -1,14 +1,22 @@
-import type { CrossingDirection, CrossingEvent } from '../../core/detection/crossing-events'
-import type { Lap } from '../../core/domain/types'
+import type { CrossingEvent } from '../../core/detection/crossing-events'
+import type { Course, Lap } from '../../core/domain/types'
+import type { PersisterState } from '../../core/session/session-persister'
+import type { WallClock } from '../../core/session/session-engine'
 import type { CaptureSession } from '../shared/capture-session'
 
 // The product timer flow: setup (camera + ROI + trigger calibration) → test
 // (beep per valid crossing, records nothing) → armed (laps + announcements) →
-// stopped (session-end lap table). Phase 5 is amnesia by design — nothing
-// here persists; reload evaporates the session.
+// stopped (session-end lap table). Since Phase 6 the flow is course-backed
+// and persisted: every arm creates a session file (via SessionPersister)
+// before the first crossing, rewritten after every lap and discard.
 export type FlyPhase = 'setup' | 'test' | 'armed' | 'stopped'
 
 export type StopCause = 'manual' | 'camera-lost'
+
+// Lives here (plain TS) because svelte/prefer-svelte-reactivity bans raw
+// `new Date()` in .svelte.ts modules; the SessionEngine clock is a plain
+// wall-clock read, not reactive state.
+export const wallClock: WallClock = () => new Date()
 
 // The armed screen's running-clock base. Crossing timestamps live in the
 // capture-time domain (VideoFrame timestamps), which has no defined relation
@@ -27,13 +35,13 @@ export interface ArmedClockBase {
 
 // Extends the shared capture-session seam so the shared calibration
 // components (RoiOverlay, energy bars, trigger suggest) compose unchanged;
-// adds the session flow on top. Created per Fly.svelte mount, torn down on
-// unmount.
+// adds the session flow on top. Created per FlyFlow.svelte mount (after the
+// course has loaded), torn down on unmount.
 export interface FlySession extends CaptureSession {
   readonly phase: FlyPhase
-  // Ephemeral inline course fields (no persisted courses until Phase 6).
-  readonly direction: CrossingDirection
-  readonly minLapTimeMs: number
+  // The persisted course this flow runs against (direction and min lap time
+  // are the course's — edited via the course form, never inline here).
+  readonly course: Course
   readonly testCrossingCount: number
   // Lap-level reactive mirror of "the armed clock is running" (the first
   // valid crossing arrived); the per-frame clock itself reads armedClockBase.
@@ -41,6 +49,11 @@ export interface FlySession extends CaptureSession {
   // Lap-level reactive snapshot of the in-memory session's laps (re-copied on
   // lap completion and discard; records are computed from it, never stored).
   readonly laps: readonly Lap[]
+  // The current session's note ('' at arm; editable after stop).
+  readonly note: string
+  // Live SessionPersister state: `pending`/`lastError` are the unsaved-laps
+  // signal. Surfaced in the UI only after Stop (plan 06 item 5).
+  readonly persisterState: PersisterState
   readonly stopCause: StopCause | null
   // True after the page was hidden while armed: detection was interrupted and
   // laps during the gap were not detected. Dismissable.
@@ -48,14 +61,17 @@ export interface FlySession extends CaptureSession {
   readonly audioPrimed: boolean
   readonly audioError: string | null
 
-  setDirection(direction: CrossingDirection): void
-  setMinLapTimeMs(ms: number): void
-
   startTestMode(): void
   stopTestMode(): void
+  // No-ops while the previous session's save is still pending (the persister
+  // coalesces globally — arming then would drop the unsaved tail). The UI
+  // disables Arm on persisterState.pending for the same reason.
   arm(): void
   stopSession(): void
   discardLastLap(): void
+  // Post-stop note editing: updates the engine's session and persists it
+  // through the same persister write path as laps.
+  setNote(note: string): void
   // stopped → setup, keeping the camera running.
   newSession(): void
   dismissInterruption(): void

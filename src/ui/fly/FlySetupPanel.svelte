@@ -1,6 +1,7 @@
 <script lang="ts">
-  import type { CrossingDirection } from '../../core/detection/crossing-events'
+  import { hashFor } from '../../core/routing/route'
   import { fmtNumber } from '../diag/format'
+  import { directionLabel, formatMinLap } from '../screens/course-format'
   import { drawNormalizedStripBars } from '../shared/energy-bars'
   import { normalizeEnergies } from '../shared/energy-math'
   import RoiOverlay from '../shared/RoiOverlay.svelte'
@@ -8,7 +9,23 @@
   import WakeLockWarning from '../shared/WakeLockWarning.svelte'
   import type { FlySession } from './fly-session'
 
-  let { session }: { session: FlySession } = $props()
+  let {
+    session,
+    arm,
+    armDisabled,
+    speechEnabled,
+    onSpeechEnabledChange,
+  }: {
+    session: FlySession
+    // FlyFlow's guarded arm: re-checks read-only at click time and skips
+    // session.arm() while another tab holds the writer lock.
+    arm: () => void
+    // Read-only storage or the previous session still saving (FlyFlow
+    // renders the explanatory banner/note above the panel).
+    armDisabled: boolean
+    speechEnabled: boolean
+    onSpeechEnabledChange: (enabled: boolean) => void
+  } = $props()
 
   let videoEl = $state<HTMLVideoElement | null>(null)
   let barsCanvas: HTMLCanvasElement | null = null
@@ -35,22 +52,6 @@
 
   function numberValue(event: Event): number {
     return Number((event.currentTarget as HTMLInputElement).value)
-  }
-
-  const minLapSeconds = $derived(session.minLapTimeMs / 1000)
-
-  function onMinLapChange(event: Event): void {
-    const input = event.currentTarget as HTMLInputElement
-    // A cleared field reads '' and Number('') is 0, which would silently
-    // disable the debounce — ignore empty/invalid input and keep the prior
-    // value instead.
-    const seconds = input.value.trim() === '' ? Number.NaN : Number(input.value)
-    if (Number.isFinite(seconds) && seconds >= 0) {
-      session.setMinLapTimeMs(Math.round(seconds * 1000))
-    }
-    // Re-render the effective value: when the input was rejected the reactive
-    // value did not change, so Svelte would leave the stale text in place.
-    input.value = String(session.minLapTimeMs / 1000)
   }
 
   // Trigger suggestion (the shared lab/fly flow): observe quietWindowMs of
@@ -110,22 +111,14 @@
 
 <canvas class="bars" bind:this={barsCanvas} width="360" height="72"></canvas>
 
+<!-- Direction and min lap time belong to the course (product.md): shown
+     read-only here, edited via the course form. -->
+<p class="course-line hint">
+  {directionLabel(session.course.direction)} · min lap {formatMinLap(session.course.minLapTimeMs)}
+  <a href={hashFor({ id: 'edit-course', courseId: session.course.id })}>Edit course</a>
+</p>
+
 <div class="fields">
-  <label>
-    <span>direction</span>
-    <select
-      value={session.direction}
-      onchange={(e) =>
-        session.setDirection((e.currentTarget as HTMLSelectElement).value as CrossingDirection)}
-    >
-      <option value="ltr">left → right</option>
-      <option value="rtl">right → left</option>
-    </select>
-  </label>
-  <label>
-    <span>min lap time (s)</span>
-    <input type="number" min="0" step="0.5" value={minLapSeconds} onchange={onMinLapChange} />
-  </label>
   <label>
     <span>trigger level</span>
     <input
@@ -139,6 +132,15 @@
     <code>{fmtNumber(session.tunables.triggerLevel, 2)}</code>
   </label>
 </div>
+
+<label class="speech-toggle">
+  <input
+    type="checkbox"
+    checked={speechEnabled}
+    onchange={(e) => onSpeechEnabledChange((e.currentTarget as HTMLInputElement).checked)}
+  />
+  <span>spoken lap times</span>
+</label>
 
 <div class="controls">
   <button onclick={() => trigger.start()} disabled={trigger.collecting || !session.captureRunning}>
@@ -164,7 +166,7 @@
   <button onclick={() => session.startTestMode()} disabled={!session.captureRunning}>
     Test mode
   </button>
-  <button class="primary" onclick={() => session.arm()} disabled={!session.captureRunning}>
+  <button class="primary" onclick={arm} disabled={!session.captureRunning || armDisabled}>
     Arm
   </button>
 </div>
@@ -198,7 +200,7 @@
     margin: 0.75rem 0;
   }
 
-  label {
+  .fields label {
     display: grid;
     grid-template-columns: 8.5rem 1fr 3.5rem;
     align-items: center;
@@ -206,19 +208,23 @@
     font-size: 0.9rem;
   }
 
-  label select,
-  label input[type='number'] {
-    grid-column: 2 / 4;
-    background: #16233c;
-    color: #e8edf7;
-    border: 1px solid #2c3850;
-    border-radius: 0.375rem;
-    padding: 0.35rem 0.5rem;
-    font-size: 0.95rem;
-  }
-
   label input[type='range'] {
     width: 100%;
+  }
+
+  .course-line {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.6rem;
+    align-items: baseline;
+  }
+
+  .speech-toggle {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    margin: 0.5rem 0;
+    font-size: 0.9rem;
   }
 
   code {

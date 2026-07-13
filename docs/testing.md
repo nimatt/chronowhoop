@@ -8,19 +8,24 @@ Six categories, introduced across the roadmap (`docs/plans/00-roadmap.md`). Conc
 script names live in `package.json` — refer to it rather than to any command written
 here.
 
-**Status (Phase 5):** unit tests cover the core services (camera, audio/speech, wake
+**Status (Phase 6):** unit tests cover the core services (camera, audio/speech, wake
 lock, OPFS probes, the frozen `/diag` spike modules), the full CPU detection pipeline
 — sources, reducer goldens and determinism, ring buffer, fixture formats, `ClipSource`
-replay, regeneration — and the Phase 5 product core (records, announcer formatting and
-queue policy, session engine), all running in `check` and CI. Browser-contract covers
-the OPFS atomic-write probes and mounts the real `Diag.svelte`, `Lab.svelte`, and
-`Fly.svelte` components. The webgpu (SwiftShader) CI leg from Phases 1–2 is **retired**
+replay, regeneration — the Phase 5 product core (records, announcer formatting and
+queue policy, session engine), and the Phase 6 storage layer (schema
+validators/migrations, session persister, export assembly, UI repositories), all
+running in `check` and CI. The storage contract suite runs in node against
+`MemoryStorage` and against `OpfsStorage` over a fake OPFS, and in real Chromium
+against `OpfsStorage` over real OPFS — see Browser-contract for the exact node/browser
+split. The full-loop video-E2E test (`src/core/full-loop.test.ts`) gained a storage
+variant proving the never-block contract (see Video-E2E). Browser-contract covers the
+OPFS atomic-write probes, the real-OPFS storage suites, and component tests for the
+product screens. The webgpu (SwiftShader) CI leg from Phases 1–2 is **retired**
 per [ADR 0009](decisions/0009-cpu-pipeline-webcodecs.md): the reduction stage is pure
 TypeScript over WebCodecs capture, so determinism and goldens are node tests; the
 `src/core/gpu/` and `src/core/cpu-pipeline/` spike modules remain as `/diag`
-instruments, covered by node unit tests only. The full-loop video-E2E test landed in
-Phase 5 (`src/core/full-loop.test.ts` — see Video-E2E); only the manual device
-checklist is still pending, and its section describes the intended shape.
+instruments, covered by node unit tests only. Only the manual device checklist is
+still pending, and its section describes the intended shape.
 
 ## Unit
 
@@ -37,19 +42,27 @@ checklist is still pending, and its section describes the intended shape.
 ## Browser-contract
 
 - **Verifies:** behavior that needs a real browser — platform APIs jsdom cannot fake
-  (today OPFS read/write plus the atomic-write and persistence probes; in Phase 6 the
-  full storage contract suite — crash-simulation, quarantine, the never-block guarantee —
-  against both `MemoryStorage` and `OpfsStorage`) and component/UI wiring that needs a
-  real DOM (today the App capability-gate test and the `/diag` and `/lab` component
-  tests, mounting the real components).
+  (OPFS read/write plus the atomic-write and persistence probes; since Phase 6 the
+  storage contract suite against `OpfsStorage` over **real OPFS**, the crash-simulation
+  and quarantine tests, and real Web Locks single-writer/read-only behavior, all in
+  `opfs-storage.browser.test.ts`) and component/UI wiring that needs a real DOM (the
+  App capability-gate test, the `/diag` and `/lab` component tests, and since Phase 6
+  the product-screen tests: course CRUD (`course-crud.browser.test.ts`), session/course
+  review views (`review-views.browser.test.ts`), the persisted fly flow including the
+  mid-session durability checkpoint (`fly.browser.test.ts`), and storage error and
+  read-only state surfacing, all mounting the real components).
 - **Does not:** verify reduction arithmetic (that is determinism & golden, in node) or
-  assert full product flows over recorded video (that is video-E2E).
+  assert full product flows over recorded video (that is video-E2E). Nor does it own
+  the whole storage test story: the same contract suite (`storage-contract.ts`) also
+  runs in **node** against `MemoryStorage` and against `OpfsStorage` over a fake OPFS
+  (so fake and real rig pin identical semantics), and the never-block proof is a node
+  video-E2E variant — see Video-E2E.
 - **Where:** real browsers via Vitest browser mode with the Playwright provider —
   **Chromium** (gating) and **WebKit** (informational, per [ADR 0006](decisions/0006-ios-best-effort.md):
   cheap to run, kept green when it is free, never blocks a merge). Locally and in CI.
 - **Gating:** Chromium gates; WebKit is informational.
-- **Introduced:** Phase 1 (OPFS hello-world spike); the real storage contract suites land
-  in Phase 6.
+- **Introduced:** Phase 1 (OPFS hello-world spike); the real storage contract suites
+  landed in Phase 6.
 
 ## Determinism & golden (node)
 
@@ -112,12 +125,22 @@ checklist is still pending, and its section describes the intended shape.
   exact equality; real corpus clips exercise pipeline + detector via the corpus harness
   (see Determinism & golden), and a corpus-clip full-loop case is a future option.
   Corpus clips are the canonical asset; strip-energy JSON is a regenerable derivative.
+  Since Phase 6 the canonical clip scenario is extracted into a reusable rig
+  (`src/core/full-loop-rig.ts`) and a storage variant
+  (`src/core/full-loop-storage.test.ts`, gating, node) proves the **never-block
+  contract**: the same scenario runs four ways — no storage, `MemoryStorage` + session
+  persister, hang-forever storage, and fail-every-write storage — and the full run
+  outcome (crossings, laps, announcement decisions, final statuses) must be
+  byte-identical across all four, so persistence can never delay timing or speech.
+  The `MemoryStorage` run additionally flushes and asserts the stored session equals
+  the engine's final session, discards included.
 - **Gating:** yes — the full-loop test gates, and so does the fixture corpus, tiered —
   `must-pass` fixtures require 100% detection / zero false positives; `known-limitation`
   fixtures assert documented behavior, and an unexpected pass of a known-hard case also
   fails (progress is ratcheted in).
 - **Introduced:** the full-loop test landed in Phase 5; the fixture tooling and replay it
-  depends on landed in Phase 3; the crossing-detection assertions filled in through Phase 4.
+  depends on landed in Phase 3; the crossing-detection assertions filled in through
+  Phase 4; the never-block storage variant landed in Phase 6.
 
 ## Manual device checklist
 

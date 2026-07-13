@@ -25,3 +25,12 @@ export function formatTimeOfDay(completedAt: IsoDateString): string {
   const pad = (value: number) => String(value).padStart(2, '0')
   return `${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`
 }
+
+// Local date + time to the minute (session headers and lists), hand-rolled
+// for the same locale-independence reason.
+export function formatDateTime(iso: IsoDateString): string {
+  const date = new Date(iso)
+  if (Number.isNaN(date.getTime())) return '—'
+  const pad = (value: number) => String(value).padStart(2, '0')
+  return `${String(date.getFullYear())}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}`
+}

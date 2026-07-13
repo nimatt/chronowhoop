@@ -15,7 +15,8 @@ export interface OpfsFileHandleLike {
 
 export interface OpfsDirectoryLike {
   getFileHandle(name: string, options?: { create?: boolean }): Promise<OpfsFileHandleLike>
-  removeEntry(name: string): Promise<void>
+  getDirectoryHandle?(name: string, options?: { create?: boolean }): Promise<OpfsDirectoryLike>
+  removeEntry(name: string, options?: { recursive?: boolean }): Promise<void>
   // Structural because lib.dom's FileSystemDirectoryHandle may lack async
   // iteration depending on the enabled libs.
   keys?(): AsyncIterable<string>

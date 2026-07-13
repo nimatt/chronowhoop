@@ -49,7 +49,7 @@ If reduction falls behind the delivered camera rate, frames drop **at the source
 
 ## Orientation
 
-The ROI is bound to the device orientation captured at setup — an **app-state binding, not an OS screen lock**. On an orientation change while a course is configured, the app warns and invalidates detection until the setup orientation is restored; it never remaps the ROI across orientations.
+The ROI is bound to the device orientation captured at setup — an **app-state binding, not an OS screen lock**. On an orientation change while a course is configured, the app warns and invalidates detection until the setup orientation is restored; it never remaps the ROI across orientations. (Not yet enforced by the product UI — scheduled Phase 7.)
 
 ## Calibration UX
 

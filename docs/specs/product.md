@@ -40,6 +40,8 @@ Announced times are rounded to the nearest tenth, half up (14.35 → "fourteen f
 
 If an announcement arrives while one is speaking, it is queued; only the newest queued announcement survives (older queued ones are dropped). Speech is never cut off mid-word. A stuck speech engine is skipped after a timeout so announcements cannot wedge.
 
+A speech on/off toggle (a stored app-level setting, default on) silences lap announcements only; test-mode confirmation beeps are setup feedback, not speech, and are unaffected.
+
 ## Session view
 
 Table of all laps: lap number, duration (two decimals displayed; true resolution is camera-frame granularity, ±1 frame), time of day, status. Best lap and the best-three-consecutive window are visually highlighted. Discarded laps are shown struck through, not hidden. Session header shows course name, date, note, and both records; course view shows all-time records and the session list.

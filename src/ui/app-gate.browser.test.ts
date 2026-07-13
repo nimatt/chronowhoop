@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { mount, unmount } from 'svelte'
 import App from './App.svelte'
 import type { CapabilityReport } from '../core/capabilities/capabilities'
+import { MemoryStorage } from '../core/storage/memory-storage'
 
 const failingReport: CapabilityReport = {
   ok: false,
@@ -32,7 +33,12 @@ let container: HTMLElement
 let instance: ReturnType<typeof mount> | undefined
 
 function mountApp(check: () => Promise<CapabilityReport>) {
-  instance = mount(App, { target: container, props: { check } })
+  // MemoryStorage keeps the gate tests off the real OPFS root and the
+  // origin-global writer lock.
+  instance = mount(App, {
+    target: container,
+    props: { check, createStorage: () => new MemoryStorage() },
+  })
 }
 
 const text = () => container.textContent ?? ''

@@ -1,6 +1,8 @@
 # 0007 — Minimal hand-rolled hash router, no routing library
 
-**Status:** accepted, 2026-07-12
+**Status:** accepted, 2026-07-12; amended 2026-07-13 (param routes)
+
+> **Amendment (2026-07-13, Phase 6):** the "revisit when routes gain params" moment arrived with courses and sessions. The router stays hand-rolled: `Route` became a discriminated union (`home | diag | lab | fly/<courseId> | course/<id> | session/<id> | course/new | course/<id>/edit`), the parser splits hash segments by hand, and a `hashFor(route)` helper is the single source of hash strings for links and navigation. Unknown or malformed hashes still map to home; plain `#/fly` no longer exists (the fly flow is course-backed). Still no guards, no history abstraction, no library — the seam and the escape hatch below are unchanged.
 
 ## Context
 

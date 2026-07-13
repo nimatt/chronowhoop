@@ -78,6 +78,6 @@ The five round-table experts (vision pipeline, frontend/PWA, storage, quality, d
 
 **Phase 5 — Flyable timer:** full-loop CI test green; real flying sessions with spoken laps matching stopwatch/video; 20-minute soak (thermal, memory, device-loss recovery) clean; storage.md-shaped domain types frozen.
 
-**Phase 6 — Persistence + product UI:** contract suite green on MemoryStorage + OpfsStorage (Chromium; WebKit informational) incl. crash-simulation and quarantine; mid-phase checkpoint: tab kill mid-session loses at most the last lap; slow-storage fake proves the never-block contract; working export; iOS install-before-data guidance live; course CRUD, productized setup, session/course review all work on-device.
+**Phase 6 — Persistence + product UI:** contract suite green on MemoryStorage + OpfsStorage (Chromium; WebKit informational) incl. crash-simulation and quarantine; mid-phase checkpoint: tab kill mid-session loses at most the last lap; slow-storage fake proves the never-block contract; working export; iOS install-before-data guidance live (dropped — ADR 0008: export/import is the migration path; no iOS device); course CRUD, productized setup, session/course review all work on-device.
 
 **Phase 7 — v1:** airplane-mode installed-PWA full session on Android (iOS best-effort); export/import round trip with fuzz-tested import; Playwright E2E green; desktop layout pass with the import-and-review story; device-matrix checklist (incl. on-device GPU self-test) and field acceptance protocol signed off; runbooks committed.
