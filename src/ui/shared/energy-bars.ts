@@ -5,7 +5,11 @@
 import { drawStripBars } from '../diag/strip-bars'
 import { timelinePoints } from './energy-math'
 
-const TRIGGER_COLOR = '#ffd27e'
+// Mockup tokens (canvas can't read CSS custom properties without a DOM
+// query): --c-record trigger line, --c-panel ground, --c-signal timeline.
+const TRIGGER_COLOR = '#ffb84d'
+const PANEL_BG = '#131922'
+const SIGNAL_COLOR = '#33decf'
 
 function clamp01(value: number): number {
   return Math.min(1, Math.max(0, value))
@@ -40,12 +44,14 @@ export function drawNormalizedStripBars(
 ): void {
   const ctx = canvas?.getContext('2d')
   if (!canvas || !ctx) return
-  drawStripBars(canvas, normalizedEnergies, normalizedEnergies.length)
+  // The trigger level doubles as the hot threshold: bars above it draw hot
+  // cyan, the rest dim (mockup .bar / .bar.hot).
+  drawStripBars(canvas, normalizedEnergies, normalizedEnergies.length, triggerLevel)
   drawTriggerLine(canvas, ctx, triggerLevel)
   if (hudText !== undefined) {
     ctx.font = '12px monospace'
     ctx.textBaseline = 'top'
-    ctx.fillStyle = '#e8edf7'
+    ctx.fillStyle = '#eaeef4'
     ctx.fillText(hudText, 4, 4)
   }
 }
@@ -59,11 +65,11 @@ export function drawEnergyTimeline(
 ): void {
   const ctx = canvas?.getContext('2d')
   if (!canvas || !ctx) return
-  ctx.fillStyle = '#16233c'
+  ctx.fillStyle = PANEL_BG
   ctx.fillRect(0, 0, canvas.width, canvas.height)
   const points = timelinePoints(maxEnergyPerFrame, canvas.width, canvas.height)
   if (points.length > 0) {
-    ctx.strokeStyle = '#7ea6ff'
+    ctx.strokeStyle = SIGNAL_COLOR
     ctx.lineWidth = 1.5
     ctx.beginPath()
     points.forEach(([x, y], i) => {

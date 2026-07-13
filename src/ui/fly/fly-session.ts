@@ -1,5 +1,5 @@
 import type { CrossingEvent } from '../../core/detection/crossing-events'
-import type { Course, Lap } from '../../core/domain/types'
+import type { Course, IsoDateString, Lap } from '../../core/domain/types'
 import type { PersisterState } from '../../core/session/session-persister'
 import type { WallClock } from '../../core/session/session-engine'
 import type { CaptureSession } from '../shared/capture-session'
@@ -50,12 +50,18 @@ export interface FlySession extends CaptureSession {
   // Lap-level reactive snapshot of the in-memory session's laps (re-copied on
   // lap completion and discard; records are computed from it, never stored).
   readonly laps: readonly Lap[]
-  // The current session's note ('' at arm; editable after stop).
+  // The session note. Prefilled from the course's most recent session
+  // (product.md setup step), editable during setup/test; arm() seeds the new
+  // session with it, and it stays editable (persisted) after stop.
   readonly note: string
   // Live SessionPersister state: `pending`/`lastError` are the unsaved-laps
   // signal. Surfaced in the UI only after Stop (plan 06 item 5).
   readonly persisterState: PersisterState
   readonly stopCause: StopCause | null
+  // The in-memory session's start time (the stopped panel's header date).
+  // Null until a session has been armed; non-reactive — read it after a phase
+  // change, not as a live signal.
+  readonly sessionStartedAt: IsoDateString | null
   // True after the page was hidden while armed: detection was interrupted and
   // laps during the gap were not detected. Dismissable. Also raised when an
   // armed session's orientation is restored after a mismatch — same meaning:
@@ -80,8 +86,9 @@ export interface FlySession extends CaptureSession {
   arm(): void
   stopSession(): void
   discardLastLap(): void
-  // Post-stop note editing: updates the engine's session and persists it
-  // through the same persister write path as laps.
+  // Note editing. Pre-arm (setup/test) it only updates the local note the
+  // next arm() starts the session with; post-stop it also updates the
+  // engine's session and persists it through the same write path as laps.
   setNote(note: string): void
   // stopped → setup, keeping the camera running.
   newSession(): void

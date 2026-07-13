@@ -69,6 +69,13 @@ function buttonByText(label: string): HTMLButtonElement {
   return button
 }
 
+// The AppBar back control (test mode's back-to-setup; a link elsewhere).
+function backControl(): HTMLElement {
+  const control = container.querySelector<HTMLElement>('[aria-label="Back"]')
+  if (!control) throw new Error('no back control')
+  return control
+}
+
 // Builds a context over the given storage and seeds the fly course; the
 // context is destroyed in afterEach (matters for OpfsStorage's writer lock).
 async function seededContext(storage: Storage): Promise<StorageContext> {
@@ -127,6 +134,7 @@ describe('Fly screen', () => {
     await mountFlyScreen({ context })
 
     await waitForText('Basement 3-gate')
+    expect(text()).toContain('Calibrate')
     expect(text()).toContain('start the camera')
 
     // The course owns direction and min lap time — shown read-only with an
@@ -140,7 +148,7 @@ describe('Fly screen', () => {
     // camera running).
     expect(buttonByText('Start camera').disabled).toBe(false)
     expect(buttonByText('Test mode').disabled).toBe(true)
-    expect(buttonByText('Arm').disabled).toBe(true)
+    expect(buttonByText('ARM').disabled).toBe(true)
 
     expect(getUserMedia).not.toHaveBeenCalled()
   })
@@ -276,12 +284,12 @@ describe.runIf(typeof defaultMediaStreamTrackProcessor() === 'function')(
 
         // Camera running gates arming; wake lock may be unsupported/failed in
         // headless — tolerated (only a warning line, never a blocker).
-        await vi.waitFor(() => expect(buttonByText('Arm').disabled).toBe(false), {
+        await vi.waitFor(() => expect(buttonByText('ARM').disabled).toBe(false), {
           timeout: 15000,
         })
         expect(session.captureRunning).toBe(true)
 
-        buttonByText('Arm').click()
+        buttonByText('ARM').click()
         await waitForText('ARMED')
         expect(text()).toContain('first crossing starts the clock')
         expect(session.phase).toBe('armed')
@@ -320,7 +328,7 @@ describe.runIf(typeof defaultMediaStreamTrackProcessor() === 'function')(
         session.injectCrossing({ timestampMs: 44650, direction: 'ltr' }) // lap 3: 16.00
         await waitForText('16.00')
 
-        buttonByText('Stop').click()
+        buttonByText('STOP').click()
         await waitForText('Session over')
         expect(session.phase).toBe('stopped')
 
@@ -363,8 +371,60 @@ describe.runIf(typeof defaultMediaStreamTrackProcessor() === 'function')(
         await waitForText('Suggest trigger')
         expect(session.phase).toBe('setup')
         expect(session.captureRunning).toBe(true)
-        expect(buttonByText('Arm').disabled).toBe(false)
+        expect(buttonByText('ARM').disabled).toBe(false)
         expect(session.laps.length).toBe(0)
+
+        // The setup note field prefills from the course's most recent
+        // session (the one just flown), and arming seeds the new session
+        // with it (product.md setup step).
+        const noteInput = container.querySelector<HTMLInputElement>('input.val')
+        expect(noteInput?.value).toBe('triple gate practice')
+        buttonByText('ARM').click()
+        await waitForText('ARMED')
+        await vi.waitFor(async () => {
+          const summaries = await storage.listSessions()
+          expect(summaries.length).toBe(2)
+        })
+        const second = (await storage.listSessions()).find((each) => each.id !== summary.id)
+        expect((await storage.loadSession(second!.id)).note).toBe('triple gate practice')
+      },
+      45000,
+    )
+
+    it(
+      'a fresh mount prefills the setup note from the stored latest session',
+      async () => {
+        const { mediaDevices } = startQuietScene()
+        const storage = new MemoryStorage()
+        {
+          const { session } = await mountFly(mediaDevices, storage)
+          await waitForText('Basement 3-gate')
+          buttonByText('Start camera').click()
+          await vi.waitFor(() => expect(buttonByText('ARM').disabled).toBe(false), {
+            timeout: 15000,
+          })
+          buttonByText('ARM').click()
+          await waitForText('ARMED')
+          buttonByText('STOP').click()
+          await waitForText('Session over')
+          setNoteField('fresh props')
+          await vi.waitFor(async () => {
+            const [summary] = await storage.listSessions()
+            expect((await storage.loadSession(summary.id)).note).toBe('fresh props')
+          })
+          expect(session.phase).toBe('stopped')
+        }
+
+        // Remount over the same storage: Fly.svelte resolves the latest
+        // session's note before the flow mounts.
+        void unmount(instance!)
+        instance = undefined
+        for (const context of contexts.splice(0)) context.destroy()
+        const context = await seededContext(storage)
+        await mountFlyScreen({ mediaDevices, context })
+        await waitForText('Basement 3-gate')
+        const noteInput = container.querySelector<HTMLInputElement>('input.val')
+        expect(noteInput?.value).toBe('fresh props')
       },
       45000,
     )
@@ -388,11 +448,12 @@ describe.runIf(typeof defaultMediaStreamTrackProcessor() === 'function')(
         session.injectCrossing({ timestampMs: 2000, direction: 'rtl' }) // wrong direction: silent
         await vi.waitFor(() => expect(session.testCrossingCount).toBe(2))
 
-        buttonByText('Back to setup').click()
+        // Test mode's AppBar back returns to setup.
+        backControl().click()
         await waitForText('Suggest trigger')
         expect(session.phase).toBe('setup')
 
-        buttonByText('Arm').click()
+        buttonByText('ARM').click()
         await waitForText('ARMED')
         session.injectCrossing({ timestampMs: 1000, direction: 'ltr' })
         session.injectCrossing({ timestampMs: 15320, direction: 'ltr' })
@@ -422,7 +483,7 @@ describe.runIf(typeof defaultMediaStreamTrackProcessor() === 'function')(
 
         await waitForText('Basement 3-gate')
         buttonByText('Start camera').click()
-        await vi.waitFor(() => expect(buttonByText('Arm').disabled).toBe(false), {
+        await vi.waitFor(() => expect(buttonByText('ARM').disabled).toBe(false), {
           timeout: 15000,
         })
 
@@ -431,7 +492,7 @@ describe.runIf(typeof defaultMediaStreamTrackProcessor() === 'function')(
         setPageVisibility('visible')
         expect(text()).not.toContain(INTERRUPTION_NOTICE)
 
-        buttonByText('Arm').click()
+        buttonByText('ARM').click()
         await waitForText('ARMED')
         session.injectCrossing({ timestampMs: 1000, direction: 'ltr' })
         await vi.waitFor(() => expect(session.clockStarted).toBe(true))
@@ -467,11 +528,11 @@ describe.runIf(typeof defaultMediaStreamTrackProcessor() === 'function')(
 
         await waitForText('Basement 3-gate')
         buttonByText('Start camera').click()
-        await vi.waitFor(() => expect(buttonByText('Arm').disabled).toBe(false), {
+        await vi.waitFor(() => expect(buttonByText('ARM').disabled).toBe(false), {
           timeout: 15000,
         })
 
-        buttonByText('Arm').click()
+        buttonByText('ARM').click()
         await waitForText('ARMED')
 
         // Four valid laps where the best window is laps 2–4, so the class
@@ -483,7 +544,7 @@ describe.runIf(typeof defaultMediaStreamTrackProcessor() === 'function')(
         session.injectCrossing({ timestampMs: 64650, direction: 'ltr' }) // lap 4: 16.00
         await vi.waitFor(() => expect(session.laps.length).toBe(4))
 
-        buttonByText('Stop').click()
+        buttonByText('STOP').click()
         await waitForText('Session over')
 
         const rows = Array.from(container.querySelectorAll('tbody tr'))
@@ -496,10 +557,10 @@ describe.runIf(typeof defaultMediaStreamTrackProcessor() === 'function')(
         ])
 
         // Window total 14.32 + 13.33 + 16.00 = 43.65, in both the table
-        // legend and the session records header.
+        // legend and the session record tiles.
         expect(text()).toContain('best three consecutive — 43.65 s total')
-        const records = container.querySelector('.records')
-        expect(records?.textContent).toContain('best 3 consecutive')
+        const records = container.querySelector('.recs')
+        expect(records?.textContent).toContain('Best 3')
         expect(records?.textContent).toContain('43.65')
       },
       45000,
@@ -513,29 +574,29 @@ describe.runIf(typeof defaultMediaStreamTrackProcessor() === 'function')(
 
         const clockSeconds = () => {
           const value = container.querySelector('.clock')?.textContent ?? ''
-          const match = /^(?:(\d+):)?(\d+)\.(\d)$/.exec(value)
+          const match = /^(?:(\d+):)?(\d{2})\.(\d{2})$/.exec(value)
           if (!match) throw new Error(`clock not running: ${JSON.stringify(value)}`)
           const minutes = match[1] === undefined ? 0 : Number(match[1])
-          return minutes * 60 + Number(match[2]) + Number(match[3]) / 10
+          return minutes * 60 + Number(match[2]) + Number(match[3]) / 100
         }
 
         await waitForText('Basement 3-gate')
         buttonByText('Start camera').click()
-        await vi.waitFor(() => expect(buttonByText('Arm').disabled).toBe(false), {
+        await vi.waitFor(() => expect(buttonByText('ARM').disabled).toBe(false), {
           timeout: 15000,
         })
 
-        buttonByText('Arm').click()
+        buttonByText('ARM').click()
         await waitForText('ARMED')
         expect(container.querySelector('.clock')?.textContent).toBe('· · ·')
 
         session.injectCrossing({ timestampMs: 1000, direction: 'ltr' })
         await vi.waitFor(() =>
-          expect(container.querySelector('.clock')?.textContent).toMatch(/\d+\.\d/),
+          expect(container.querySelector('.clock')?.textContent).toMatch(/\d{2}\.\d{2}/),
         )
 
         // Liveness: the rAF loop keeps writing — a later sample differs from
-        // an earlier one (tenths advance every 100 ms of real time).
+        // an earlier one (hundredths advance every 10 ms of real time).
         const firstSample = clockSeconds()
         await vi.waitFor(() => expect(clockSeconds()).toBeGreaterThan(firstSample), {
           timeout: 5000,
@@ -565,28 +626,28 @@ describe.runIf(typeof defaultMediaStreamTrackProcessor() === 'function')(
 
         await waitForText('Basement 3-gate')
         buttonByText('Start camera').click()
-        await vi.waitFor(() => expect(buttonByText('Arm').disabled).toBe(false), {
+        await vi.waitFor(() => expect(buttonByText('ARM').disabled).toBe(false), {
           timeout: 15000,
         })
 
         // Flip read-only and click Arm BEFORE the poll can disable the
         // button: the click handler re-derives the live answer and refuses.
         storage.readOnly = true
-        buttonByText('Arm').click()
+        buttonByText('ARM').click()
         // The click-time re-derive refused synchronously (never armed) …
         expect(session.phase).toBe('setup')
         // … and the banner/disable follow on the next render.
         await vi.waitFor(() => {
           expect(text()).toContain(READ_ONLY_BANNER)
-          expect(buttonByText('Arm').disabled).toBe(true)
+          expect(buttonByText('ARM').disabled).toBe(true)
         })
 
         // Lock regained (the other tab closed): the poll re-enables arming.
         storage.readOnly = false
-        await vi.waitFor(() => expect(buttonByText('Arm').disabled).toBe(false), {
+        await vi.waitFor(() => expect(buttonByText('ARM').disabled).toBe(false), {
           timeout: 3000,
         })
-        buttonByText('Arm').click()
+        buttonByText('ARM').click()
         await waitForText('ARMED')
       },
       45000,
@@ -601,11 +662,11 @@ describe.runIf(typeof defaultMediaStreamTrackProcessor() === 'function')(
 
         await waitForText('Basement 3-gate')
         buttonByText('Start camera').click()
-        await vi.waitFor(() => expect(buttonByText('Arm').disabled).toBe(false), {
+        await vi.waitFor(() => expect(buttonByText('ARM').disabled).toBe(false), {
           timeout: 15000,
         })
 
-        buttonByText('Arm').click()
+        buttonByText('ARM').click()
         await waitForText('ARMED')
         session.injectCrossing({ timestampMs: 1000, direction: 'ltr' })
         session.injectCrossing({ timestampMs: 15320, direction: 'ltr' }) // lap 1: 14.32
@@ -616,7 +677,7 @@ describe.runIf(typeof defaultMediaStreamTrackProcessor() === 'function')(
         storage.holdWrites()
         session.injectCrossing({ timestampMs: 28650, direction: 'ltr' }) // lap 2: 13.33
         await waitForText('13.33')
-        buttonByText('Stop').click()
+        buttonByText('STOP').click()
         await waitForText('Session over')
         await waitForText('Saving session…')
 
@@ -624,15 +685,15 @@ describe.runIf(typeof defaultMediaStreamTrackProcessor() === 'function')(
         // global), so the setup panel gates Arm and says why.
         buttonByText('New session').click()
         await waitForText('Saving previous session…')
-        expect(buttonByText('Arm').disabled).toBe(true)
+        expect(buttonByText('ARM').disabled).toBe(true)
         // The session-level guard is authoritative even past the button.
         session.arm()
         expect(session.phase).toBe('setup')
 
         storage.releaseWrites()
-        await vi.waitFor(() => expect(buttonByText('Arm').disabled).toBe(false))
+        await vi.waitFor(() => expect(buttonByText('ARM').disabled).toBe(false))
         expect(text()).not.toContain('Saving previous session…')
-        buttonByText('Arm').click()
+        buttonByText('ARM').click()
         await waitForText('ARMED')
       },
       45000,
@@ -661,11 +722,11 @@ describe.runIf(typeof defaultMediaStreamTrackProcessor() === 'function')(
 
           await waitForText('Basement 3-gate')
           buttonByText('Start camera').click()
-          await vi.waitFor(() => expect(buttonByText('Arm').disabled).toBe(false), {
+          await vi.waitFor(() => expect(buttonByText('ARM').disabled).toBe(false), {
             timeout: 15000,
           })
 
-          buttonByText('Arm').click()
+          buttonByText('ARM').click()
           await waitForText('ARMED')
           session.injectCrossing({ timestampMs: 1000, direction: 'ltr' }) // starts the clock
           session.injectCrossing({ timestampMs: 15320, direction: 'ltr' }) // lap 1: 14.32
@@ -691,7 +752,7 @@ describe.runIf(typeof defaultMediaStreamTrackProcessor() === 'function')(
           expect(midFlight.laps[0]).toMatchObject({ durationMs: 14320, status: 'valid' })
 
           // Stop → both laps flushed, note edit round-trips to disk.
-          buttonByText('Stop').click()
+          buttonByText('STOP').click()
           await waitForText('Session saved.')
           setNoteField('checkpoint note')
           await vi.waitFor(async () => {

@@ -37,6 +37,9 @@ export interface FlySessionOptions {
   // The most recent session's detectionConfig snapshot for this course
   // (product.md prefill); absent → the shipped defaults.
   initialDetectionConfig?: SessionDetectionConfig
+  // The most recent session's note for this course (product.md prefill);
+  // editable during setup, arm() seeds the new session with it.
+  initialNote?: string
   // Read at announcement time (settings.speechEnabled); false skips the
   // announcer entirely. Test-mode beeps are unaffected — they are setup
   // feedback, not speech.
@@ -70,7 +73,7 @@ export function createFlySession(options: FlySessionOptions): FlySession {
   let testCrossingCount = $state(0)
   let clockStarted = $state(false)
   let laps = $state<Lap[]>([])
-  let note = $state('')
+  let note = $state(options.initialNote ?? '')
   let stopCause = $state<StopCause | null>(null)
   let interruptionNotice = $state(false)
   let audioPrimed = $state(audio.primed)
@@ -307,13 +310,14 @@ export function createFlySession(options: FlySessionOptions): FlySession {
     // A stale queued announcement from the previous session must not leak
     // across the arm boundary.
     announcer.reset()
-    engine.arm(course, detectionConfig)
+    // The session starts with the setup note (prefilled from the course's
+    // most recent session, edited in the setup panel).
+    engine.arm(course, detectionConfig, note)
     // The session file exists before the first crossing — a zero-lap crash
     // leaves a recoverable record (plan 06 item 5).
     persister.sessionStarted(engine.session!)
     options.onArmed?.()
     laps = []
-    note = ''
     clockBase = null
     clockStarted = false
     stopCause = null
@@ -353,6 +357,12 @@ export function createFlySession(options: FlySessionOptions): FlySession {
   }
 
   function setNote(next: string): void {
+    // Pre-arm the note is local state only — there is no session yet; arm()
+    // seeds the new session with it.
+    if (phase === 'setup' || phase === 'test') {
+      note = next
+      return
+    }
     // Post-stop note editing (product.md session view / stopped panel). The
     // engine's session object is the single in-memory truth, so the note is
     // written onto it and persisted through the same persister path as laps —
@@ -368,7 +378,8 @@ export function createFlySession(options: FlySessionOptions): FlySession {
   function newSession(): void {
     if (phase !== 'stopped') return
     laps = []
-    note = ''
+    // The note is kept: the just-stopped session is now the course's most
+    // recent, so its note IS the next setup's prefill.
     stopCause = null
     interruptionNotice = false
     pendingInterruption = false
@@ -441,6 +452,9 @@ export function createFlySession(options: FlySessionOptions): FlySession {
     },
     get stopCause() {
       return stopCause
+    },
+    get sessionStartedAt() {
+      return engine.session?.startedAt ?? null
     },
     get interruptionNotice() {
       return interruptionNotice

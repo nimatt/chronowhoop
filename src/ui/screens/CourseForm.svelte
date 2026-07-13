@@ -2,6 +2,7 @@
   import type { CrossingDirection } from '../../core/detection/crossing-events'
   import { hashFor } from '../../core/routing/route'
   import type { StorageContext } from '../data/storage-context'
+  import AppBar from '../shared/AppBar.svelte'
 
   // courseId present → edit; absent → new (routes #/course/<id>/edit and
   // #/course/new). Deletion is out of scope per the product spec.
@@ -17,12 +18,16 @@
   void repo.ensureLoaded()
 
   const DEFAULT_MIN_LAP_SECONDS = 3
+  const MIN_LAP_STEP_SECONDS = 0.5
 
   let name = $state('')
+  // The "name is required" hint only shows once the field was touched or a
+  // save was attempted — never on a pristine form (mockup 02 has no
+  // validation state).
+  let nameTouched = $state(false)
   let direction = $state<CrossingDirection>('ltr')
-  // number|undefined: an emptied number input binds undefined, which just
-  // reads as invalid.
-  let minLapSeconds = $state<number | undefined>(DEFAULT_MIN_LAP_SECONDS)
+  // Always a defined number ≥ 0: the stepper is the only writer and clamps.
+  let minLapSeconds = $state(DEFAULT_MIN_LAP_SECONDS)
   let saving = $state(false)
   let seeded = $state(editingId === undefined)
 
@@ -39,24 +44,27 @@
     seeded = true
   })
 
+  function stepMinLap(deltaSeconds: number): void {
+    // Round to a tenth so repeated float steps can't drift the display.
+    minLapSeconds = Math.max(0, Math.round((minLapSeconds + deltaSeconds) * 10) / 10)
+  }
+
   const nameValid = $derived(name.trim().length > 0)
-  const minLapValid = $derived(
-    minLapSeconds !== undefined && Number.isFinite(minLapSeconds) && minLapSeconds >= 0,
-  )
-  const canSave = $derived(nameValid && minLapValid && seeded && !saving && !context.readOnly)
+  const canSave = $derived(nameValid && seeded && !saving && !context.readOnly)
 
   const cancelHash = $derived(
     editingId === undefined ? hashFor({ id: 'home' }) : hashFor({ id: 'course', courseId: editingId }),
   )
 
   async function save() {
+    nameTouched = true
     if (!canSave) return
     saving = true
     try {
       const fields = {
         name: name.trim(),
         direction,
-        minLapTimeMs: Math.round((minLapSeconds ?? 0) * 1000),
+        minLapTimeMs: Math.round(minLapSeconds * 1000),
       }
       if (editingId === undefined) {
         const created = await repo.createCourse(fields)
@@ -72,10 +80,7 @@
 </script>
 
 <main class="course-form">
-  <header>
-    <h1>{editingId === undefined ? 'New course' : 'Edit course'}</h1>
-    <a href={cancelHash}>Cancel</a>
-  </header>
+  <AppBar title={editingId === undefined ? 'New course' : 'Edit course'} backHref={cancelHash} />
 
   {#if context.readOnly}
     <p class="notice-warning">Read-only: another tab is active — changes cannot be saved.</p>
@@ -88,7 +93,7 @@
     {#if repo.lastError !== null}
       <p class="notice-error">Storage error: {repo.lastError.message}</p>
     {:else}
-      <p class="hint">Loading course…</p>
+      <p class="loading">Loading course…</p>
     {/if}
   {:else}
     <form
@@ -97,120 +102,130 @@
         void save()
       }}
     >
-      <label>
-        Name
-        <input type="text" bind:value={name} placeholder="Basement 3-gate" />
-      </label>
-      {#if !nameValid}
-        <p class="field-hint">A name is required.</p>
-      {/if}
+      <div class="stack">
+        <div class="field">
+          <label class="label" for="course-name">Name</label>
+          <input
+            id="course-name"
+            class="val"
+            type="text"
+            bind:value={name}
+            oninput={() => (nameTouched = true)}
+            placeholder="Basement 3-gate"
+          />
+          {#if nameTouched && !nameValid}
+            <span class="field-hint">A name is required.</span>
+          {/if}
+        </div>
 
-      <label>
-        Direction that counts
-        <select bind:value={direction}>
-          <option value="ltr">left → right</option>
-          <option value="rtl">right → left</option>
-        </select>
-      </label>
+        <div class="field">
+          <span class="label">Crossing direction</span>
+          <div class="seg">
+            <button
+              type="button"
+              class="opt"
+              class:sel={direction === 'ltr'}
+              aria-pressed={direction === 'ltr'}
+              onclick={() => (direction = 'ltr')}
+            >
+              <span class="arw">→</span>
+              <span>Left to right</span>
+              <small>{direction === 'ltr' ? 'counts this way' : ' '}</small>
+            </button>
+            <button
+              type="button"
+              class="opt"
+              class:sel={direction === 'rtl'}
+              aria-pressed={direction === 'rtl'}
+              onclick={() => (direction = 'rtl')}
+            >
+              <span class="arw">←</span>
+              <span>Right to left</span>
+              <small>{direction === 'rtl' ? 'counts this way' : ' '}</small>
+            </button>
+          </div>
+          <span class="hint">
+            Which way through the gate counts as a lap. The other direction is ignored.
+          </span>
+        </div>
 
-      <label>
-        Minimum lap time (seconds)
-        <input type="number" bind:value={minLapSeconds} min="0" step="0.1" />
-      </label>
-      {#if !minLapValid}
-        <p class="field-hint">Must be a number ≥ 0.</p>
-      {/if}
+        <div class="field">
+          <span class="label">Minimum lap time</span>
+          <div class="stepper">
+            <button
+              type="button"
+              aria-label="Decrease minimum lap time"
+              disabled={minLapSeconds <= 0}
+              onclick={() => stepMinLap(-MIN_LAP_STEP_SECONDS)}
+            >
+              −
+            </button>
+            <div class="n">{minLapSeconds.toFixed(1)}<small> s</small></div>
+            <button
+              type="button"
+              aria-label="Increase minimum lap time"
+              onclick={() => stepMinLap(MIN_LAP_STEP_SECONDS)}
+            >
+              +
+            </button>
+          </div>
+          <span class="hint">
+            Crossings closer together than this are treated as debounce noise.
+          </span>
+        </div>
 
-      {#if repo.lastError !== null}
-        <p class="notice-error">Storage error: {repo.lastError.message}</p>
-      {/if}
+        {#if repo.lastError !== null}
+          <p class="notice-error">Storage error: {repo.lastError.message}</p>
+        {/if}
+      </div>
 
-      <div class="controls">
-        <button type="submit" class="primary" disabled={!canSave}>Save</button>
-        <a class="cancel" href={cancelHash}>Cancel</a>
+      <div class="cta">
+        <button type="submit" class="btn btn-primary" disabled={!canSave}>
+          {editingId === undefined ? 'Create course' : 'Save'}
+        </button>
       </div>
     </form>
   {/if}
 </main>
 
 <style>
-  header {
+  /* Pin the CTA to the bottom of the viewport on phones (mockup 02): the
+     form fills the remaining height and the CTA rides at its end. The 5.5rem
+     accounts for main's own vertical padding (App.svelte). */
+  main.course-form {
     display: flex;
-    align-items: baseline;
-    justify-content: space-between;
-    margin-bottom: 0.75rem;
-  }
-
-  h1 {
-    margin: 0;
-    font-size: 1.4rem;
+    flex-direction: column;
+    gap: 14px;
+    min-height: calc(100dvh - 5.5rem);
   }
 
   form {
+    flex: 1;
     display: flex;
     flex-direction: column;
-    gap: 0.9rem;
-    max-width: 24rem;
+    margin-top: 6px;
   }
 
-  label {
-    display: flex;
-    flex-direction: column;
-    gap: 0.3rem;
-    font-size: 0.95rem;
-  }
-
-  input,
-  select {
-    background: #16233c;
-    color: #e8edf7;
-    border: 1px solid #2c3850;
-    border-radius: 0.375rem;
-    padding: 0.45rem 0.6rem;
-    font-size: 1rem;
-  }
-
-  input:focus,
-  select:focus {
-    outline: none;
-    border-color: #7ea6ff;
+  input.val::placeholder {
+    color: var(--c-dim2);
   }
 
   .field-hint {
-    margin: -0.5rem 0 0;
     font-size: 0.8rem;
-    color: #ffcf8a;
+    color: var(--c-record);
   }
 
-  .controls {
-    display: flex;
-    align-items: center;
-    gap: 0.9rem;
-    margin-top: 0.4rem;
+  .notice-error,
+  .notice-warning {
+    margin: 0;
   }
 
-  button {
-    background: #1d3a6e;
-    color: #e8edf7;
-    border: 1px solid #3b5fa3;
-    border-radius: 0.375rem;
-    padding: 0.5rem 1.4rem;
-    font-size: 1rem;
-    font-weight: 600;
-    cursor: pointer;
+  .loading {
+    color: var(--c-dim);
   }
 
-  button:hover:not(:disabled) {
-    border-color: #7ea6ff;
+  .cta {
+    margin-top: auto;
+    padding-top: 1.5rem;
   }
-
-  button:disabled {
-    opacity: 0.45;
-    cursor: default;
-  }
-
-  .hint {
-    opacity: 0.75;
-  }
-
 </style>

@@ -27,6 +27,8 @@ function fakeStoppedSession(): FlySession {
     phase: 'stopped',
     stopCause: 'manual',
     interruptionNotice: false,
+    course: makeCourse({ id: 'c-1' }),
+    sessionStartedAt: null,
     laps: [],
     note: '',
     persisterState: { pending: false },

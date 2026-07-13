@@ -1,7 +1,6 @@
 <script lang="ts">
   import type { CameraMediaDevicesLike } from '../../core/camera/camera-service'
   import type { Course, SessionDetectionConfig } from '../../core/domain/types'
-  import { hashFor } from '../../core/routing/route'
   import type { StorageContext } from '../data/storage-context'
   import { createFlySession } from './fly-session.svelte'
   import type { FlySession } from './fly-session'
@@ -20,6 +19,7 @@
     context,
     course,
     initialDetectionConfig,
+    initialNote,
     mediaDevices,
     matchMedia,
     onsession,
@@ -27,6 +27,7 @@
     context: StorageContext
     course: Course
     initialDetectionConfig?: SessionDetectionConfig
+    initialNote?: string
     mediaDevices?: CameraMediaDevicesLike
     matchMedia?: OrientationMatchMedia
     onsession?: (session: FlySession) => void
@@ -39,6 +40,7 @@
     course,
     storage: context.storage,
     ...(initialDetectionConfig !== undefined ? { initialDetectionConfig } : {}),
+    ...(initialNote !== undefined ? { initialNote } : {}),
     ...(mediaDevices !== undefined ? { mediaDevices } : {}),
     ...(matchMedia !== undefined ? { matchMedia } : {}),
     // Read at announcement time; the toggle below persists the setting.
@@ -89,24 +91,12 @@
 </script>
 
 <main class="fly">
-  <header>
-    <h1>{course.name}</h1>
-    <!-- Leaving mid-flight must stay deliberate (browser back), but setup and
-         stopped are the natural entry/exit points of the loop. -->
-    {#if session.phase === 'setup' || session.phase === 'stopped'}
-      <nav>
-        <a href={hashFor({ id: 'course', courseId: course.id })}>Course</a>
-        <a href={hashFor({ id: 'home' })}>Home</a>
-      </nav>
-    {/if}
-  </header>
-
   <!-- Orientation binding (detection.md): the warning renders over every
        camera-active phase — during setup the ROI calibration is bound to the
        orientation too, and while armed the detector is detached until the
        device is rotated back. -->
   {#if session.orientationMismatch && session.boundOrientation !== null && session.phase !== 'stopped'}
-    <p class="banner orientation-banner" role="alert">
+    <p class="banner notice-warning orientation-banner" role="alert">
       Rotate the phone back to {session.boundOrientation} — detection is paused until the setup
       orientation is restored.
     </p>
@@ -114,7 +104,7 @@
 
   {#if session.phase === 'setup' || session.phase === 'test'}
     {#if readOnly}
-      <p class="banner" role="alert">
+      <p class="banner notice-warning" role="alert">
         Read-only: another tab is active, so sessions recorded here could not be saved — arming is
         disabled. Close the other tab to record sessions here.
       </p>
@@ -142,31 +132,15 @@
 </main>
 
 <style>
-  header {
-    display: flex;
-    align-items: baseline;
-    justify-content: space-between;
-    margin-bottom: 0.75rem;
-  }
-
-  h1 {
-    margin: 0;
-    font-size: 1.4rem;
-  }
-
-  nav {
-    display: flex;
-    gap: 0.9rem;
+  /* The global main padding reserves 4rem at the bottom for Home's FAB; the
+     fly flow has none, and its panels pin primary actions to the viewport
+     bottom (armed STOP, test-mode ARM), so keep the reserve symmetric. */
+  main.fly {
+    padding-bottom: 1.5rem;
   }
 
   .banner {
     margin: 0.75rem 0;
-    padding: 0.6rem 0.8rem;
-    border-radius: 0.375rem;
-    background: #4a3413;
-    border: 1px solid #8a6420;
-    color: #ffd27e;
-    font-size: 0.95rem;
   }
 
   /* Must be legible at a glance from beside the gate. */
@@ -176,30 +150,27 @@
   }
 
   /* Shared styling for the phase panels (scoped styles don't reach child
-     components, so these are :global under the screen's own class). */
-  .fly :global(button) {
-    background: #16233c;
-    color: #e8edf7;
-    border: 1px solid #2c3850;
-    border-radius: 0.375rem;
+     components, so these are :global under the screen's own class). The
+     mockup-vocabulary .btn buttons and the AppBar back button style
+     themselves; everything else (small inline actions: Retry, Apply,
+     Suggest trigger, Dismiss, Export now) gets this quiet panel look. */
+  .fly :global(button:not(.btn):not(.backbtn)) {
+    background: var(--c-panel);
+    color: var(--c-ink);
+    border: 1px solid var(--c-line);
+    border-radius: 10px;
     padding: 0.4rem 0.9rem;
-    font-size: 0.95rem;
+    font-size: 0.9rem;
     cursor: pointer;
   }
 
   .fly :global(button:hover:not(:disabled)) {
-    border-color: #7ea6ff;
+    border-color: var(--c-signal-dim);
   }
 
   .fly :global(button:disabled) {
     opacity: 0.45;
     cursor: default;
-  }
-
-  .fly :global(button.primary) {
-    background: #1d3a6e;
-    border-color: #3b5fa3;
-    font-weight: 600;
   }
 
   .fly :global(.controls) {
@@ -210,19 +181,9 @@
     margin: 0.6rem 0;
   }
 
+  /* The global .hint token is caption-sized; fly guidance lines are read from
+     beside the gate, so bump them a notch. */
   .fly :global(.hint) {
-    font-size: 0.9rem;
-    opacity: 0.75;
-    margin: 0.4rem 0;
-  }
-
-  .fly :global(.error) {
-    padding: 0.5rem 0.7rem;
-    border-radius: 0.375rem;
-    background: #3f1520;
-    border: 1px solid #7c2b3d;
-    color: #ff8aa0;
-    font-size: 0.9rem;
-    overflow-wrap: anywhere;
+    font-size: 0.85rem;
   }
 </style>

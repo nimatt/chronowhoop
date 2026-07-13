@@ -47,6 +47,12 @@ function buttonByText(label: string): HTMLButtonElement {
   return button
 }
 
+function buttonByLabel(label: string): HTMLButtonElement {
+  const button = container.querySelector<HTMLButtonElement>(`button[aria-label="${label}"]`)
+  if (!button) throw new Error(`no button with aria-label ${JSON.stringify(label)}`)
+  return button
+}
+
 function linkByText(label: string): HTMLAnchorElement {
   const link = Array.from(container.querySelectorAll('a')).find(
     (candidate) => candidate.textContent?.trim() === label,
@@ -158,8 +164,8 @@ describe.runIf(typeof defaultMediaStreamTrackProcessor() === 'function')(
         const nameInput = query<HTMLInputElement>('input[type="text"]')
         nameInput.value = 'Basement 3-gate'
         nameInput.dispatchEvent(new Event('input', { bubbles: true }))
-        await vi.waitFor(() => expect(buttonByText('Save').disabled).toBe(false))
-        buttonByText('Save').click()
+        await vi.waitFor(() => expect(buttonByText('Create course').disabled).toBe(false))
+        buttonByText('Create course').click()
 
         // Save lands on the (empty) course view.
         await waitForText('All-time records')
@@ -169,14 +175,14 @@ describe.runIf(typeof defaultMediaStreamTrackProcessor() === 'function')(
 
         // Fly: start the camera, arm, inject 3 crossings = clock start + 2
         // exact laps (capture-domain timestamps; min lap 3 s never trips).
-        linkByText('Fly').click()
+        linkByText('Start session').click()
         await vi.waitFor(() => expect(session).toBeDefined())
         await waitForText('start the camera')
         buttonByText('Start camera').click()
-        await vi.waitFor(() => expect(buttonByText('Arm').disabled).toBe(false), {
+        await vi.waitFor(() => expect(buttonByText('ARM').disabled).toBe(false), {
           timeout: 15000,
         })
-        buttonByText('Arm').click()
+        buttonByText('ARM').click()
         await waitForText('ARMED')
 
         session!.injectCrossing({ timestampMs: 1000, direction: 'ltr' }) // starts the clock
@@ -189,7 +195,7 @@ describe.runIf(typeof defaultMediaStreamTrackProcessor() === 'function')(
         // Discard the most recent lap (13.33), then stop.
         buttonByText('Discard last lap').click()
         await vi.waitFor(() => expect(session!.laps[1]?.status).toBe('discarded'))
-        buttonByText('Stop').click()
+        buttonByText('STOP').click()
         await waitForText('Session over')
         await waitForText('Session saved.')
 
@@ -203,28 +209,31 @@ describe.runIf(typeof defaultMediaStreamTrackProcessor() === 'function')(
         expect(stoppedRows[0].classList.contains('best')).toBe(true)
         expect(stoppedRows[1].textContent).toContain('13.33')
         expect(stoppedRows[1].classList.contains('discarded')).toBe(true)
-        expect(query('.records').textContent).toContain('best lap')
+        expect(query('.recs').textContent).toContain('Best lap')
         expect(text()).not.toContain('best three consecutive —')
         // Nothing exported yet → the backup nudge fires after the session.
         await waitForText('backed up yet')
 
         // Review on the course view: the flown session (minus the discarded
-        // lap) drives the all-time records and the session list.
-        linkByText('Course').click()
+        // lap) drives the all-time records and the session list. The stopped
+        // panel's AppBar back links to the course.
+        query<HTMLAnchorElement>('a[aria-label="Back"]').click()
         await waitForText('All-time records')
-        await waitForText('best 14.32')
-        const phoneRecords = normalized(query('.review-columns .records').textContent)
-        expect(phoneRecords).toContain('best lap 14.32')
-        expect(phoneRecords).toContain('best 3 consecutive —') // discard breaks the window
+        await waitForText('14.32')
+        const phoneRecords = normalized(query('.review-columns .recs').textContent)
+        expect(phoneRecords).toContain('Best lap')
+        expect(phoneRecords).toContain('14.32')
+        expect(phoneRecords).toContain('Best 3 consecutive')
+        expect(phoneRecords).toContain('—') // discard breaks the window
         const phoneSessionItem = normalized(query('.sessions li').textContent)
         expect(phoneSessionItem).toContain('1 lap')
         expect(phoneSessionItem).toContain('(1 discarded)')
-        expect(phoneSessionItem).toContain('best 14.32')
+        expect(phoneSessionItem).toContain('14.32 s')
 
         // Export from Home, capturing the delivered file through the Web
         // Share seam (the share sheet is the product path on phones).
-        linkByText('Courses').click()
-        await waitForText('Tiny-whoop lap timer')
+        query<HTMLAnchorElement>('a[aria-label="Back"]').click()
+        await waitForText('Courses')
         await waitForText('Basement 3-gate')
         let sharedFile: File | undefined
         Object.defineProperty(navigator, 'canShare', { configurable: true, value: () => true })
@@ -235,7 +244,7 @@ describe.runIf(typeof defaultMediaStreamTrackProcessor() === 'function')(
             return Promise.resolve()
           },
         })
-        buttonByText('Export data').click()
+        buttonByLabel('Export').click()
         await waitForText('Exported chronowhoop-export-')
         expect(sharedFile).toBeDefined()
         const exportedText = await sharedFile!.text()
@@ -273,8 +282,8 @@ describe.runIf(typeof defaultMediaStreamTrackProcessor() === 'function')(
         // the phone showed.
         query<HTMLAnchorElement>('.course-link').click()
         await waitForText('All-time records')
-        await waitForText('best 14.32')
-        expect(normalized(query('.review-columns .records').textContent)).toBe(phoneRecords)
+        await waitForText('14.32')
+        expect(normalized(query('.review-columns .recs').textContent)).toBe(phoneRecords)
         expect(normalized(query('.sessions li').textContent)).toBe(phoneSessionItem)
 
         // …and the session view shows the identical lap table.
@@ -289,7 +298,7 @@ describe.runIf(typeof defaultMediaStreamTrackProcessor() === 'function')(
 
         // Re-import on the same device is a clean no-op (idempotent merge).
         location.hash = '#/'
-        await waitForText('Export data')
+        await waitForText('Courses')
         importFile(exportedText)
         await waitForText('Added 0 courses and 0 sessions; skipped 1 course and 1 session')
       },

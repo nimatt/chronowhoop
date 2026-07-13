@@ -101,6 +101,24 @@ afterEach(() => {
   container.remove()
 })
 
+describe('home course cards (App + MemoryStorage)', () => {
+  it('shows per-course all-time records and the sessions meta line on the card', async () => {
+    mountApp(await seededStorage())
+
+    await waitForText('Garage loop')
+    // The card carries the all-time records (full-scan on Home mount)…
+    await waitForText('13.33')
+    await waitForText('41.30')
+    // …and the session meta line (count + last-flown short date).
+    await waitForText('2 sessions · last flown Jul 11')
+
+    // The whole card links to the course view; flying starts there.
+    const card = container.querySelector<HTMLAnchorElement>('.course-link')
+    expect(card?.getAttribute('href')).toBe('#/course/c-1')
+    expect(text()).not.toContain('Start session')
+  })
+})
+
 describe('course view (App + MemoryStorage)', () => {
   it('shows all-time records across sessions and the session list newest first', async () => {
     mountApp(await seededStorage())
@@ -112,12 +130,14 @@ describe('course view (App + MemoryStorage)', () => {
 
     const items = Array.from(container.querySelectorAll('.sessions li'))
     expect(items.length).toBe(2)
-    // Newest first: the discarded lap is excluded from the valid count.
+    // Newest first: the discarded lap is excluded from the valid count; the
+    // session best rides on the card's right edge; the note is snippeted.
     expect(items[0].textContent).toContain('3 laps')
     expect(items[0].textContent).toContain('(1 discarded)')
-    expect(items[0].textContent).toContain('best 13.33')
+    expect(items[0].textContent).toContain('13.33 s')
+    expect(items[0].textContent).toContain('evening pass')
     expect(items[1].textContent).toContain('2 laps')
-    expect(items[1].textContent).toContain('best 14.32')
+    expect(items[1].textContent).toContain('14.32 s')
     expect(items[0].querySelector('a')?.getAttribute('href')).toBe('#/session/s-new')
   })
 
@@ -141,10 +161,10 @@ describe('course view (App + MemoryStorage)', () => {
     )
 
     location.hash = '#/'
-    await waitForText('Tiny-whoop lap timer')
+    await waitForText('Courses')
     location.hash = '#/course/c-1'
     await vi.waitFor(() => expect(container.querySelectorAll('.sessions li').length).toBe(3))
-    expect(text()).toContain('best 12.00')
+    expect(text()).toContain('12.00 s')
   })
 
   it('remounts on a direct course-A → course-B hash edit (no stale records)', async () => {
@@ -187,7 +207,7 @@ describe('session view (App + MemoryStorage)', () => {
 
     await waitForText('Garage loop')
     await waitForText('2026-07-11')
-    await waitForText('best 3 consecutive')
+    await waitForText('Best 3 consecutive') // the table's bracket label
     await waitForText('41.30')
 
     const rows = Array.from(container.querySelectorAll('tbody tr'))

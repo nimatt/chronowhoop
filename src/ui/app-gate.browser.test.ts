@@ -66,8 +66,8 @@ describe('App capability gate wiring', () => {
   it('while the capability check is pending, home shows the checking state', async () => {
     mountApp(pending)
     await waitForText('Checking browser capabilities')
-    expect(text()).not.toContain('Tiny-whoop lap timer')
-    expect(text()).not.toContain("can't run in this browser")
+    expect(text()).not.toContain('Courses')
+    expect(text()).not.toContain("can't run ChronoWhoop")
   })
 
   it('renders /diag and /lab immediately while the check is pending (gate exemption)', async () => {
@@ -91,23 +91,26 @@ describe('App capability gate wiring', () => {
   it('shows Unsupported with per-capability results on a failing report, and re-shows it after visiting /diag', async () => {
     mountApp(resolved(failingReport))
 
-    await waitForText("ChronoWhoop can't run in this browser")
-    expect(text()).toContain('WebCodecs capture (MediaStreamTrackProcessor)')
-    expect(text()).toContain('FAIL')
+    await waitForText("This browser can't run ChronoWhoop")
+    expect(text()).toContain('WebCodecs')
+    expect(text()).toContain('detection capture')
+    expect(text()).toContain('MediaStreamTrackProcessor is not available')
+    expect(container.querySelectorAll('.probe.fail').length).toBe(1)
+    expect(container.querySelectorAll('.probe.pass').length).toBe(3)
     expect(text()).toContain('Open diagnostics')
 
     setHash('#/diag')
     await waitForText('Diagnostics')
-    expect(text()).not.toContain("can't run in this browser")
+    expect(text()).not.toContain("can't run ChronoWhoop")
 
     setHash('#/')
-    await waitForText("ChronoWhoop can't run in this browser")
+    await waitForText("This browser can't run ChronoWhoop")
   })
 
   it('renders home on an all-pass report', async () => {
     mountApp(resolved(passingReport))
-    await waitForText('Tiny-whoop lap timer')
-    expect(text()).not.toContain("can't run in this browser")
+    await waitForText('Courses')
+    expect(text()).not.toContain("can't run ChronoWhoop")
     expect(text()).not.toContain('Checking browser capabilities')
   })
 })

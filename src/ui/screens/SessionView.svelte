@@ -5,11 +5,12 @@
   import type { StorageContext } from '../data/storage-context'
   import { formatDateTime } from '../fly/fly-format'
   import LapTable from '../fly/LapTable.svelte'
-  import RecordsSummary from '../shared/RecordsSummary.svelte'
+  import AppBar from '../shared/AppBar.svelte'
+  import RecTiles from '../shared/RecTiles.svelte'
 
-  // Persisted-session review (product.md "Session view"): lap table with
-  // highlights/strikethrough, header with course/date/note/records, note
-  // editing. App keys this screen on sessionId.
+  // Persisted-session review (product.md "Session view", mockup screen 07):
+  // header card with date/note/record tiles, mono lap table with the best-3
+  // bracket, note editing. App keys this screen on sessionId.
   let { context, sessionId }: { context: StorageContext; sessionId: string } = $props()
 
   // svelte-ignore state_referenced_locally
@@ -35,14 +36,27 @@
   })
 
   const course = $derived(session === null ? undefined : coursesRepo.courseById(session.courseId))
+  const records = $derived(session === null ? null : sessionRecords(session.laps))
+  const noteDirty = $derived(session !== null && note !== session.note)
+  const discardedLapNumbers = $derived(
+    session === null
+      ? []
+      : session.laps.filter((lap) => lap.status === 'discarded').map((lap) => lap.n),
+  )
+
   // Orphan sessions (courseId matching no course — an imported session whose
   // course never arrived, storage.md merge rules) render with the "unknown
   // course" placeholder; while courses are still loading, stay neutral.
-  const courseLabel = $derived(
-    course !== undefined ? course.name : coursesRepo.loaded ? 'Unknown course' : 'Session',
-  )
-  const records = $derived(session === null ? null : sessionRecords(session.laps))
-  const noteDirty = $derived(session !== null && note !== session.note)
+  const appBarProps = $derived.by(() => {
+    if (course !== undefined) {
+      const courseHref = hashFor({ id: 'course', courseId: course.id })
+      return { backHref: courseHref, subtitle: course.name, subtitleHref: courseHref }
+    }
+    if (session !== null && coursesRepo.loaded) {
+      return { backHref: hashFor({ id: 'home' }), subtitle: 'Unknown course' }
+    }
+    return { backHref: hashFor({ id: 'home' }) }
+  })
 
   async function saveNote(): Promise<void> {
     if (session === null || !noteDirty || savingNote) return
@@ -62,13 +76,7 @@
 </script>
 
 <main class="session-view">
-  <header>
-    {#if course !== undefined}
-      <a href={hashFor({ id: 'course', courseId: course.id })}>{course.name}</a>
-    {:else}
-      <a href={hashFor({ id: 'home' })}>Courses</a>
-    {/if}
-  </header>
+  <AppBar title="Session" {...appBarProps} />
 
   {#if !loadSettled}
     <p class="hint">Loading session…</p>
@@ -78,27 +86,26 @@
       This session does not exist — it may have been removed, or its file was damaged and set
       aside.
     </p>
-    <a href={hashFor({ id: 'home' })}>Back to courses</a>
+    <p><a href={hashFor({ id: 'home' })}>Back to courses</a></p>
   {:else}
-    <h1>{courseLabel}</h1>
-    <p class="meta">{formatDateTime(session.startedAt)}</p>
-
-    <!-- Stacked on the phone; records/note beside the lap table on desktop
+    <!-- Stacked on the phone; header card beside the lap table on desktop
          (the review story — 48rem breakpoint, see App.svelte). -->
     <div class="review-columns">
-      <div class="session-info">
-        {#if records !== null}
-          <RecordsSummary {records} lapCount={session.laps.length} />
-        {/if}
+      <div class="card session-info">
+        <div class="date mono">{formatDateTime(session.startedAt)}</div>
 
-        <label class="note">
-          <span>Note</span>
-          <textarea rows="2" placeholder="e.g. new props, windy day" bind:value={note}></textarea>
-        </label>
+        <div class="note">
+          <textarea
+            rows="2"
+            placeholder="e.g. new props, windy day"
+            aria-label="Session note"
+            bind:value={note}
+          ></textarea>
+        </div>
         {#if noteDirty || savingNote}
           <div class="controls">
             <button
-              class="primary"
+              class="btn btn-primary"
               onclick={() => void saveNote()}
               disabled={savingNote || context.readOnly}
             >
@@ -112,80 +119,101 @@
         {#if noteError !== null}
           <p class="notice-error">Could not save the note: {noteError}</p>
         {/if}
+
+        {#if records !== null}
+          <div class="recs-row">
+            <RecTiles
+              bestLapMs={records.bestLap?.durationMs}
+              bestThreeMs={records.bestThreeConsecutive?.totalMs}
+            />
+          </div>
+        {/if}
       </div>
 
       <div class="session-laps">
-        <LapTable laps={session.laps} />
+        <div class="card laps-card">
+          <LapTable laps={session.laps} />
+        </div>
+        {#if discardedLapNumbers.length > 0}
+          <p class="hint discard-note">
+            Lap{discardedLapNumbers.length > 1 ? 's' : ''}
+            {discardedLapNumbers.join(', ')} discarded — the best-3 window can't span
+            {discardedLapNumbers.length > 1 ? 'them' : 'it'}.
+          </p>
+        {/if}
       </div>
     </div>
   {/if}
 </main>
 
 <style>
-  header {
-    margin-bottom: 0.75rem;
-    font-size: 0.9rem;
+  .review-columns {
+    margin-top: 0.9rem;
   }
 
-  h1 {
-    margin: 0;
-    font-size: 1.5rem;
+  .date {
+    font-size: 0.82rem;
+    color: var(--c-dim);
   }
 
-  .meta {
-    margin: 0.25rem 0 1rem;
-    opacity: 0.75;
-  }
-
+  /* Mockup .rev-head .note: italic signal-cyan. The mockup's quote glyphs are
+     dropped — the note is an always-editable textarea, and flanking quotes
+     detach from the text as it wraps or stays short. */
   .note {
-    display: flex;
-    flex-direction: column;
-    gap: 0.3rem;
-    margin: 0.9rem 0 0.5rem;
-    font-size: 0.9rem;
+    margin-top: 8px;
+    font-size: 0.84rem;
+    font-style: italic;
+    color: var(--c-signal);
   }
 
   .note textarea {
-    background: #16233c;
-    color: #e8edf7;
-    border: 1px solid #2c3850;
-    border-radius: 0.375rem;
-    padding: 0.45rem 0.6rem;
-    font-size: 0.95rem;
+    width: 100%;
+    background: transparent;
+    border: none;
+    padding: 0;
+    color: var(--c-signal);
     font-family: inherit;
-    resize: vertical;
+    font-size: inherit;
+    font-style: inherit;
+    line-height: 1.4;
+    resize: none;
+  }
+
+  .note textarea::placeholder {
+    color: var(--c-dim2);
   }
 
   .controls {
     display: flex;
-    align-items: center;
-    gap: 0.9rem;
-    margin: 0.5rem 0 1rem;
+    flex-direction: column;
+    gap: 0.5rem;
+    margin-top: 0.7rem;
   }
 
-  button {
-    background: #1d3a6e;
-    color: #e8edf7;
-    border: 1px solid #3b5fa3;
-    border-radius: 0.375rem;
-    padding: 0.45rem 1.2rem;
-    font-size: 0.95rem;
-    font-weight: 600;
-    cursor: pointer;
+  .notice-error {
+    margin: 0.7rem 0 0;
   }
 
-  button:hover:not(:disabled) {
-    border-color: #7ea6ff;
+  main > .notice-error {
+    margin-top: 0.9rem;
   }
 
-  button:disabled {
-    opacity: 0.45;
-    cursor: default;
+  .recs-row {
+    margin-top: 12px;
   }
 
-  .hint {
-    opacity: 0.75;
-    font-size: 0.9rem;
+  .session-laps {
+    margin-top: 0.9rem;
+  }
+
+  .laps-card {
+    padding: 6px 4px;
+  }
+
+  .discard-note {
+    margin: 8px 4px 0;
+    text-align: center;
+    line-height: 1.45;
   }
 
   @media (min-width: 48rem) {
@@ -198,6 +226,10 @@
       grid-template-columns: minmax(18rem, 24rem) minmax(0, 44rem);
       gap: 2.5rem;
       align-items: start;
+    }
+
+    .session-laps {
+      margin-top: 0;
     }
   }
 </style>

@@ -3,9 +3,10 @@
   import { bestLap, courseRecords, type Records } from '../../core/records/records'
   import { hashFor } from '../../core/routing/route'
   import type { StorageContext } from '../data/storage-context'
-  import { formatDateTime, formatLapSeconds } from '../fly/fly-format'
-  import RecordsSummary from '../shared/RecordsSummary.svelte'
-  import { directionLabel, formatMinLap } from './course-format'
+  import { formatLapSeconds } from '../fly/fly-format'
+  import AppBar from '../shared/AppBar.svelte'
+  import RecTiles from '../shared/RecTiles.svelte'
+  import { courseSubtitle, formatShortDate, formatShortDateTime } from './course-format'
 
   let { context, courseId }: { context: StorageContext; courseId: string } = $props()
 
@@ -24,6 +25,7 @@
     validLapCount: number
     discardedCount: number
     best: Lap | undefined
+    note: string
   }
 
   // All-time records need lap bodies, so every session of the course is
@@ -57,51 +59,71 @@
         validLapCount,
         discardedCount: session.laps.length - validLapCount,
         best: bestLap(session.laps),
+        note: session.note.trim(),
       }
     })
     unreadableCount = skipped
   })
+
+  function noteSnippet(note: string): string {
+    return note.length > 64 ? `${note.slice(0, 63)}…` : note
+  }
 </script>
 
 <main class="course-view">
-  <header>
-    <a href={hashFor({ id: 'home' })}>Courses</a>
-  </header>
-
   {#if repo.lastError !== null}
     <p class="notice-error">Storage error: {repo.lastError.message}</p>
   {/if}
 
   {#if !repo.loaded}
-    <p class="hint">Loading course…</p>
+    <AppBar title="Course" backHref={hashFor({ id: 'home' })} />
+    <p class="loading">Loading course…</p>
   {:else if course === undefined}
+    <AppBar title="Course" backHref={hashFor({ id: 'home' })} />
     <p class="notice-error">This course does not exist.</p>
-    <a href={hashFor({ id: 'home' })}>Back to courses</a>
+    <p><a href={hashFor({ id: 'home' })}>Back to courses</a></p>
   {:else}
-    <div class="title-row">
-      <h1>{course.name}</h1>
-      <a class="edit" href={hashFor({ id: 'edit-course', courseId: course.id })}>Edit</a>
-    </div>
-    <p class="meta">
-      {directionLabel(course.direction)} · min lap {formatMinLap(course.minLapTimeMs)}
-    </p>
-
-    <a class="fly-button" href={hashFor({ id: 'fly', courseId: course.id })}>Fly</a>
+    <AppBar
+      title={course.name}
+      subtitle={courseSubtitle(course)}
+      backHref={hashFor({ id: 'home' })}
+    >
+      {#snippet actions()}
+        <a class="edit" href={hashFor({ id: 'edit-course', courseId: course.id })}>Edit</a>
+      {/snippet}
+    </AppBar>
 
     <!-- Stacked on the phone; side-by-side columns on desktop (the review
          story: records at a glance next to the session list). -->
     <div class="review-columns">
-      <section class="records-section">
-        <h2>All-time records</h2>
-        {#if allTime === null}
-          <p class="hint">Loading sessions…</p>
-        {:else}
-          <RecordsSummary records={allTime} />
-        {/if}
-      </section>
+      <div class="records-col">
+        <section class="card records-card">
+          <div class="label">All-time records</div>
+          {#if allTime === null}
+            <p class="loading">Loading sessions…</p>
+          {:else}
+            <RecTiles
+              bestLapMs={allTime.bestLap?.durationMs}
+              bestThreeMs={allTime.bestThreeConsecutive?.totalMs}
+              bestThreeLabel="Best 3 consecutive"
+              bestLapMeta={allTime.bestLap === undefined
+                ? undefined
+                : formatShortDate(allTime.bestLap.completedAt)}
+              bestThreeMeta={allTime.bestThreeConsecutive === undefined
+                ? undefined
+                : formatShortDate(allTime.bestThreeConsecutive.laps[2].completedAt)}
+            />
+          {/if}
+        </section>
+
+        <a class="btn btn-primary start" href={hashFor({ id: 'fly', courseId: course.id })}>
+          <svg class="ic play" viewBox="0 0 24 24"><path d="M8 5v14l11-7z" /></svg>
+          Start session
+        </a>
+      </div>
 
       <section class="sessions">
-        <h2>Sessions</h2>
+        <div class="label">Sessions</div>
         {#if sessionsRepo.lastError !== null}
           <p class="notice-error">Storage error: {sessionsRepo.lastError.message}</p>
         {/if}
@@ -112,26 +134,29 @@
           </p>
         {/if}
         {#if sessionItems === null}
-          <p class="hint">Loading sessions…</p>
+          <p class="loading">Loading sessions…</p>
         {:else if sessionItems.length === 0}
-          <p class="hint">No sessions yet — hit Fly to time your first laps here.</p>
+          <p class="loading">No sessions yet — start a session to time your first laps here.</p>
         {:else}
-          <ul>
+          <ul class="list">
             {#each sessionItems as item (item.id)}
               <li>
-                <a href={hashFor({ id: 'session', sessionId: item.id })}>
-                  <span class="date">{formatDateTime(item.startedAt)}</span>
-                  <span class="counts">
+                <a class="card session-card" href={hashFor({ id: 'session', sessionId: item.id })}>
+                  <div class="row">
+                    <span class="mono when">{formatShortDateTime(item.startedAt)}</span>
+                    {#if item.best !== undefined}
+                      <span class="mono best">{formatLapSeconds(item.best.durationMs)} s</span>
+                    {/if}
+                  </div>
+                  <div class="meta">
                     {item.validLapCount} lap{item.validLapCount === 1 ? '' : 's'}
                     {#if item.discardedCount > 0}
                       ({item.discardedCount} discarded)
                     {/if}
-                  </span>
-                  <span class="best">
-                    {#if item.best !== undefined}
-                      best {formatLapSeconds(item.best.durationMs)}
+                    {#if item.note !== ''}
+                      · <span class="note">{noteSnippet(item.note)}</span>
                     {/if}
-                  </span>
+                  </div>
                 </a>
               </li>
             {/each}
@@ -143,121 +168,126 @@
 </main>
 
 <style>
-  header {
-    margin-bottom: 0.75rem;
-    font-size: 0.9rem;
-  }
-
-  .title-row {
+  main {
     display: flex;
-    align-items: baseline;
-    justify-content: space-between;
-    gap: 0.75rem;
-  }
-
-  h1 {
-    margin: 0;
-    font-size: 1.5rem;
+    flex-direction: column;
+    gap: 14px;
   }
 
   .edit {
-    font-size: 0.9rem;
+    align-self: center;
+    font-family: var(--font-mono);
+    font-size: 0.7rem;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--c-dim);
+    text-decoration: none;
+    padding: 8px 10px;
+    border-radius: 10px;
+    border: 1px solid var(--c-line);
+    background: var(--c-panel);
   }
 
-  .meta {
-    margin: 0.25rem 0 1.25rem;
-    opacity: 0.75;
+  .edit:hover {
+    color: var(--c-ink);
+    border-color: var(--c-signal-dim);
   }
 
-  .fly-button {
-    display: inline-block;
-    padding: 0.7rem 2.5rem;
-    border-radius: 0.5rem;
-    background: #1d3a6e;
-    border: 1px solid #3b5fa3;
-    color: #e8edf7;
-    font-size: 1.2rem;
-    font-weight: 600;
+  .review-columns,
+  .records-col {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+  }
+
+  .records-card {
+    padding: 16px;
+  }
+
+  .records-card .label {
+    margin-bottom: 12px;
+  }
+
+  a.start {
     text-decoration: none;
   }
 
-  .fly-button:hover {
-    border-color: #7ea6ff;
+  .play {
+    width: 20px;
+    height: 20px;
   }
 
-  .records-section,
   .sessions {
-    margin-top: 2rem;
-  }
-
-  .records-section h2,
-  .sessions h2 {
-    font-size: 1.1rem;
-    margin-bottom: 0.4rem;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
   }
 
   .sessions ul {
     list-style: none;
     padding: 0;
-    margin: 0.5rem 0;
-    display: flex;
-    flex-direction: column;
-    gap: 0.5rem;
+    margin: 0;
   }
 
-  .sessions li a {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 0.3rem 1rem;
-    align-items: baseline;
-    padding: 0.55rem 0.8rem;
-    border-radius: 0.5rem;
-    background: #16233c;
-    border: 1px solid #2c3850;
-    color: #e8edf7;
+  a.session-card {
+    display: block;
+    padding: 13px;
+    color: inherit;
     text-decoration: none;
   }
 
-  .sessions li a:hover {
-    border-color: #7ea6ff;
+  a.session-card:hover {
+    border-color: var(--c-signal-dim);
   }
 
-  .date {
-    font-weight: 600;
+  .row {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    gap: 10px;
   }
 
-  .counts {
-    opacity: 0.75;
-    font-size: 0.9rem;
+  .when {
+    font-size: 0.86rem;
   }
 
   .best {
-    margin-left: auto;
-    font-variant-numeric: tabular-nums;
-    font-size: 0.9rem;
+    color: var(--c-record);
+    font-size: 0.86rem;
   }
 
-  .hint {
-    opacity: 0.75;
+  .meta {
+    font-family: var(--font-mono);
+    font-size: 0.68rem;
+    color: var(--c-dim);
+    margin-top: 5px;
   }
 
-  /* Desktop (48rem breakpoint, see App.svelte): records beside the session
-     list — the import-a-phone-export-and-review story. */
+  .note {
+    color: var(--c-signal);
+    font-style: italic;
+  }
+
+  .notice-error,
+  .notice-warning {
+    margin: 0;
+  }
+
+  .loading {
+    margin: 0;
+    color: var(--c-dim);
+  }
+
+  /* Desktop (48rem breakpoint, see App.svelte): records + start beside the
+     session list — the import-a-phone-export-and-review story. */
   @media (min-width: 48rem) {
     main {
       max-width: 64rem;
     }
 
-    /* space-between across the full 64rem strands Edit at the far edge —
-       keep it next to the name instead. */
-    .title-row {
-      justify-content: flex-start;
-      gap: 1.25rem;
-    }
-
     .review-columns {
       display: grid;
-      grid-template-columns: minmax(16rem, 20rem) minmax(0, 44rem);
+      grid-template-columns: minmax(16rem, 22rem) minmax(0, 44rem);
       gap: 2.5rem;
       align-items: start;
     }

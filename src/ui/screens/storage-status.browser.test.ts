@@ -83,8 +83,8 @@ describe('storage status and failure UI (App + MemoryStorage variants)', () => {
     if (!nameInput) throw new Error('no name input')
     nameInput.value = 'Basement'
     nameInput.dispatchEvent(new Event('input', { bubbles: true }))
-    await vi.waitFor(() => expect(buttonByText('Save').disabled).toBe(false))
-    buttonByText('Save').click()
+    await vi.waitFor(() => expect(buttonByText('Create course').disabled).toBe(false))
+    buttonByText('Create course').click()
 
     await waitForText('Storage error: quota exceeded')
     // The failed save must not navigate away from the form.
@@ -98,7 +98,7 @@ describe('storage status and failure UI (App + MemoryStorage variants)', () => {
       return new MemoryStorage()
     })
 
-    await waitForText('Tiny-whoop lap timer')
+    await waitForText('Courses')
     if (!reportQuarantine) throw new Error('createStorage did not receive onQuarantine')
     reportQuarantine({
       fileName: 'session-abc.json',

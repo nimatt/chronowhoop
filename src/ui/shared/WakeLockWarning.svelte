@@ -14,6 +14,6 @@
   .warn {
     margin: 0.4rem 0;
     font-size: 0.85rem;
-    color: #ffd27e;
+    color: var(--c-record);
   }
 </style>

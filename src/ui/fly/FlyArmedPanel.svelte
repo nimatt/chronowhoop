@@ -1,6 +1,7 @@
 <script lang="ts">
   import { getAudioService } from '../../core/audio/audio-service'
   import { sessionRecords } from '../../core/records/records'
+  import Chip from '../shared/Chip.svelte'
   import WakeLockWarning from '../shared/WakeLockWarning.svelte'
   import { formatLapSeconds, formatRunningClock } from './fly-format'
   import type { FlySession } from './fly-session'
@@ -50,10 +51,30 @@
   const best = $derived(sessionRecords(laps).bestLap)
 </script>
 
-<div class="armed-badge">ARMED</div>
+<!-- Mockup 06 spreads the composition across the full screen: badge row at
+     the top, clock + stats centered, Discard/STOP pinned at thumb reach. -->
+<div class="armed-screen">
+  <div class="armed-top">
+    <span class="armed-badge"><span class="pulse"></span>ARMED</span>
+  <!-- The Awake chip is the REAL wake-lock state; when the lock is not held,
+       WakeLockWarning below carries the warning instead. -->
+  {#if session.wakeLockState === 'active'}
+    <Chip variant="ok">
+      {#snippet icon()}
+        <svg class="ic-sm" viewBox="0 0 24 24">
+          <circle cx="12" cy="12" r="4" />
+          <path
+            d="M12 2v2M12 20v2M2 12h2M20 12h2M5 5l1.5 1.5M17.5 17.5L19 19M19 5l-1.5 1.5M6.5 17.5L5 19"
+          />
+        </svg>
+      {/snippet}
+      Awake
+    </Chip>
+  {/if}
+</div>
 
 {#if session.interruptionNotice}
-  <div class="banner" role="alert">
+  <div class="banner notice-warning" role="alert">
     <span>Detection was interrupted — laps during the gap were not detected.</span>
     <button onclick={() => session.dismissInterruption()}>Dismiss</button>
   </div>
@@ -65,51 +86,114 @@
   <p class="warn">speech may be stuck — spoken lap times are queuing up</p>
 {/if}
 
-<div class="clock-wrap">
-  <span class="clock" bind:this={clockEl}>· · ·</span>
+<div class="armed-mid">
+<div class="clockwrap">
+  <div class="clock-label">Current lap</div>
+  <div class="clockline">
+    <span class="clock" bind:this={clockEl}>· · ·</span>{#if session.clockStarted}<span class="u">
+      s</span
+    >{/if}
+  </div>
   {#if !session.clockStarted}
     <span class="clock-hint">first crossing starts the clock</span>
   {/if}
 </div>
 
-<dl class="stats">
-  <div>
-    <dt>last lap</dt>
-    <dd class:discarded={lastLap?.status === 'discarded'}>
+<div class="statgrid">
+  <div class="s">
+    <div class="k">Last lap</div>
+    <div class="v" class:discarded={lastLap?.status === 'discarded'}>
       {lastLap === null ? '—' : formatLapSeconds(lastLap.durationMs)}
-    </dd>
+    </div>
   </div>
-  <div>
-    <dt>laps</dt>
-    <dd>{laps.length}</dd>
+  <div class="s best">
+    <div class="k">Session best</div>
+    <div class="v">{best === undefined ? '—' : formatLapSeconds(best.durationMs)}</div>
   </div>
-  <div>
-    <dt>best</dt>
-    <dd>{best === undefined ? '—' : formatLapSeconds(best.durationMs)}</dd>
+  <div class="s">
+    <div class="k">Laps</div>
+    <div class="v">{laps.length}</div>
   </div>
-</dl>
+</div>
+</div>
 
-<div class="controls actions">
-  <button class="primary stop" onclick={() => session.stopSession()}>Stop</button>
+<div class="bigbtns">
   <button
-    class="discard"
+    class="btn btn-ghost discard"
     onclick={() => session.discardLastLap()}
     disabled={lastLap === null || lastLap.status === 'discarded'}
   >
+    <svg class="ic" viewBox="0 0 24 24"><path d="M3 6h18M8 6V4h8v2M6 6l1 14h10l1-14" /></svg>
     Discard last lap
   </button>
+  <button class="btn btn-danger btn-stop" onclick={() => session.stopSession()}>
+    <svg class="stop-ic" viewBox="0 0 24 24" aria-hidden="true">
+      <rect x="6" y="6" width="12" height="12" rx="2" />
+    </svg>
+    STOP
+  </button>
+</div>
 </div>
 
 <style>
+  /* Fill the phone viewport (the CourseForm 100dvh pattern; 3rem is main.fly's
+     own vertical padding): badge top, clock + stats centered in the slack,
+     buttons pinned at the bottom. */
+  .armed-screen {
+    display: flex;
+    flex-direction: column;
+    min-height: calc(100dvh - 3rem);
+  }
+
+  .armed-mid {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+  }
+
+  .armed-top {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin: 0.5rem 0;
+  }
+
   .armed-badge {
-    display: inline-block;
-    padding: 0.2rem 0.7rem;
-    border-radius: 0.375rem;
-    background: #14532d;
-    color: #86efac;
-    font-weight: 700;
-    letter-spacing: 0.15em;
-    font-size: 0.85rem;
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    font-family: var(--font-mono);
+    font-size: 0.74rem;
+    letter-spacing: 0.22em;
+    color: var(--c-signal);
+  }
+
+  .pulse {
+    width: 11px;
+    height: 11px;
+    border-radius: 50%;
+    background: var(--c-signal);
+    box-shadow: 0 0 0 0 rgba(51, 222, 207, 0.6);
+    animation: pulse 1.6s ease-out infinite;
+  }
+
+  @keyframes pulse {
+    0% {
+      box-shadow: 0 0 0 0 rgba(51, 222, 207, 0.55);
+    }
+    70% {
+      box-shadow: 0 0 0 12px rgba(51, 222, 207, 0);
+    }
+    100% {
+      box-shadow: 0 0 0 0 rgba(51, 222, 207, 0);
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .pulse {
+      animation: none;
+    }
   }
 
   .banner {
@@ -118,75 +202,110 @@
     justify-content: space-between;
     gap: 0.75rem;
     margin: 0.75rem 0;
-    padding: 0.6rem 0.8rem;
-    border-radius: 0.375rem;
-    background: #4a3413;
-    border: 1px solid #8a6420;
-    color: #ffd27e;
-    font-size: 0.95rem;
   }
 
   .warn {
     font-size: 0.85rem;
-    color: #ffd27e;
+    color: var(--c-record);
   }
 
-  .clock-wrap {
-    margin: 1.25rem 0;
-    display: flex;
-    flex-direction: column;
-    align-items: flex-start;
+  .clockwrap {
+    text-align: center;
+    margin: 1.5rem 0;
+  }
+
+  .clock-label {
+    font-family: var(--font-mono);
+    font-size: 0.7rem;
+    letter-spacing: 0.22em;
+    text-transform: uppercase;
+    color: var(--c-dim);
+  }
+
+  .clockline {
+    margin-top: 4px;
   }
 
   .clock {
-    font-size: 5.5rem;
-    font-weight: 700;
+    font-family: var(--font-mono);
     font-variant-numeric: tabular-nums;
-    line-height: 1;
+    font-weight: 600;
+    font-size: clamp(4rem, 19vw, 6.1rem);
+    line-height: 0.92;
+    letter-spacing: -0.03em;
+    color: var(--c-ink);
+  }
+
+  .u {
+    font-family: var(--font-mono);
+    font-size: 2rem;
+    color: var(--c-dim);
   }
 
   .clock-hint {
-    margin-top: 0.4rem;
-    opacity: 0.7;
+    display: block;
+    margin-top: 0.5rem;
     font-size: 0.9rem;
+    color: var(--c-dim);
   }
 
-  .stats {
+  .statgrid {
     display: grid;
     grid-template-columns: repeat(3, 1fr);
-    gap: 0.75rem;
+    gap: 10px;
+    text-align: center;
     margin: 1rem 0;
   }
 
-  .stats dt {
-    opacity: 0.7;
-    font-size: 0.85rem;
+  .statgrid .s {
+    background: var(--c-panel);
+    border: 1px solid var(--c-line);
+    border-radius: 13px;
+    padding: 12px 6px;
   }
 
-  .stats dd {
-    margin: 0;
-    font-size: 2rem;
-    font-weight: 600;
+  .statgrid .k {
+    font-family: var(--font-mono);
+    font-size: 0.58rem;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--c-dim2);
+  }
+
+  .statgrid .v {
+    font-family: var(--font-mono);
     font-variant-numeric: tabular-nums;
+    font-size: 1.7rem;
+    font-weight: 600;
+    margin-top: 4px;
+    line-height: 1;
   }
 
-  .stats dd.discarded {
+  .statgrid .s.best .v {
+    color: var(--c-record);
+  }
+
+  .statgrid .v.discarded {
     text-decoration: line-through;
     opacity: 0.6;
   }
 
-  .actions {
+  .bigbtns {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
     margin-top: 1.5rem;
   }
 
-  .actions button {
-    min-height: 3.5rem;
-    padding: 0.8rem 2rem;
-    font-size: 1.2rem;
+  .discard {
+    padding: 18px;
+    font-size: 1.1rem;
   }
 
-  .actions .stop {
-    background: #7c2b3d;
-    border-color: #a63d55;
+  .stop-ic {
+    display: block;
+    width: 26px;
+    height: 26px;
+    fill: #1b0407;
   }
 </style>

@@ -10,7 +10,7 @@ A course can have any number of sessions. Deleting is out of scope for this spec
 
 ## Session lifecycle
 
-1. **Setup** — user picks a course (new sessions prefill detection config from the course's most recent session), positions the camera, adjusts the ROI and sensitivity with a live overlay showing per-strip motion energy and the threshold.
+1. **Setup** — user picks a course (new sessions prefill detection config from the course's most recent session), positions the camera, adjusts the ROI and sensitivity with a live overlay showing per-strip motion energy and the threshold. The session note also prefills from the course's most recent session (empty if none) and can be edited before arming; the armed session starts with it.
 2. **Test mode** — detection runs but records nothing; every detected valid crossing gives immediate audio feedback (no minimum-lap-time debounce in test mode — rapid hand-waves each get feedback; wrong-direction crossings stay silent). Used to verify setup by hand-wave or fly-through.
 3. **Armed** — the first valid crossing starts the clock (it completes no lap). Each subsequent valid crossing completes a lap and immediately starts the next.
 4. **Stopped** — manual stop only. An in-progress (incomplete) lap is dropped.

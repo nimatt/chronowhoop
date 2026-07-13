@@ -4,8 +4,13 @@
   import { isStorageError, type ImportResult } from '../../core/storage/storage'
   import type { StorageContext } from '../data/storage-context'
   import { pwaInstall } from '../pwa-install.svelte'
+  import AppBar from '../shared/AppBar.svelte'
+  import Chip from '../shared/Chip.svelte'
+  import IconButton from '../shared/IconButton.svelte'
+  import RecTiles from '../shared/RecTiles.svelte'
   import { exportOutcomeNotice, runExport, type ExportNotice } from '../shared/export-action'
-  import { directionArrow, formatMinLap } from './course-format'
+  import { formatShortDate } from './course-format'
+  import { computeCourseStats, type CourseStats } from './course-stats'
 
   let { context }: { context: StorageContext } = $props()
 
@@ -13,8 +18,33 @@
   // views' fields are reactive.
   // svelte-ignore state_referenced_locally
   const repo = context.coursesRepo
+  // svelte-ignore state_referenced_locally
+  const sessionsRepo = context.sessionsRepo
 
   void repo.ensureLoaded()
+
+  // Per-course all-time records need lap bodies, so this is a full-scan of
+  // every session (course-stats.ts) — computed once per mount, cached here,
+  // and recomputed after an import lands new sessions. refresh() rather than
+  // ensureLoaded(): flights persist sessions behind the repo's back.
+  let statsByCourse = $state<ReadonlyMap<string, CourseStats> | null>(null)
+
+  async function loadStats(): Promise<void> {
+    await sessionsRepo.refresh()
+    statsByCourse = await computeCourseStats(sessionsRepo.summaries, (id) =>
+      sessionsRepo.loadSession(id),
+    )
+  }
+  void loadStats()
+
+  const plural = (count: number, noun: string) => `${String(count)} ${noun}${count === 1 ? '' : 's'}`
+
+  function courseMeta(stats: CourseStats | undefined): string {
+    if (stats === undefined || stats.sessionCount === 0 || stats.lastFlownAt === undefined) {
+      return 'No sessions yet'
+    }
+    return `${plural(stats.sessionCount, 'session')} · last flown ${formatShortDate(stats.lastFlownAt)}`
+  }
 
   let exporting = $state(false)
   let exportNotice = $state<ExportNotice | null>(null)
@@ -33,8 +63,6 @@
   let importing = $state(false)
   let importNotice = $state<{ ok: boolean; text: string } | null>(null)
   let importInput: HTMLInputElement | undefined
-
-  const plural = (count: number, noun: string) => `${String(count)} ${noun}${count === 1 ? '' : 's'}`
 
   function describeImportResult(result: ImportResult): string {
     const added = `Added ${plural(result.coursesAdded, 'course')} and ${plural(result.sessionsAdded, 'session')}`
@@ -56,7 +84,8 @@
   // backs (the invalidation rule in storage-context.ts). The refreshes run
   // in finally: a mid-import failure may have landed partial writes, and the
   // UI must show them rather than a stale snapshot. Refreshes never reject
-  // (repo failures land in lastError).
+  // (repo failures land in lastError). loadStats covers the sessions-repo
+  // refresh and recomputes the card records from the merged data.
   async function importFile(file: File): Promise<void> {
     importing = true
     importNotice = null
@@ -67,7 +96,7 @@
     } catch (error) {
       importNotice = { ok: false, text: describeImportError(error) }
     } finally {
-      await Promise.all([repo.reload(), context.sessionsRepo.refresh()])
+      await Promise.all([repo.reload(), loadStats()])
       importing = false
     }
   }
@@ -82,85 +111,116 @@
   }
 </script>
 
-<main>
-  <h1>ChronoWhoop</h1>
-  <p class="tagline">Tiny-whoop lap timer</p>
+<main class="home">
+  <AppBar title="Courses">
+    {#snippet actions()}
+      <IconButton label="Import" disabled={importing} onclick={() => importInput?.click()}>
+        <svg class="ic" viewBox="0 0 24 24">
+          <path d="M12 15V3M8 7l4-4 4 4M4 15v4a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-4" />
+        </svg>
+      </IconButton>
+      <IconButton label="Export" disabled={exporting} onclick={() => void exportAll()}>
+        <svg class="ic" viewBox="0 0 24 24">
+          <path d="M12 3v12M8 11l4 4 4-4M4 15v4a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-4" />
+        </svg>
+      </IconButton>
+    {/snippet}
+  </AppBar>
+
+  <input
+    class="import-input"
+    type="file"
+    accept=".json,application/json"
+    bind:this={importInput}
+    onchange={onImportChange}
+  />
 
   {#if context.readOnly}
-    <p class="banner notice-warning">
+    <p class="notice-warning">
       Read-only: another tab is active. Close it to record sessions here.
     </p>
   {/if}
 
-  <!-- Persistent indicator (plan 07 item 3): shown on every Home visit for as
-       long as persist() has not been granted — denied or not yet answered. -->
-  {#if context.persistence !== null && !context.persistence.persisted}
-    <p class="persist-warning">
-      Storage may be cleared by the browser — persistent storage was not granted. Export regularly
-      to keep a backup.
+  <!-- Persistence status (plan 07 item 3): the mockup's ok-chip when persist()
+       was granted; the standing warning stays for as long as it wasn't
+       (denied or not yet answered). -->
+  {#if context.persistence !== null && context.persistence.persisted}
+    <div class="statusrow">
+      <Chip variant="ok">
+        {#snippet icon()}
+          <svg class="ic-sm" viewBox="0 0 24 24">
+            <path d="M12 3l7 3v5c0 4.4-3 7.6-7 9-4-1.4-7-4.6-7-9V6z" />
+            <path d="M9 12l2 2 4-4" />
+          </svg>
+        {/snippet}
+        Storage persisted
+      </Chip>
+      {#if pwaInstall.available}
+        <button class="install" onclick={() => void pwaInstall.prompt()}>Install app</button>
+      {/if}
+    </div>
+  {:else}
+    {#if context.persistence !== null}
+      <p class="notice-warning">
+        Storage may be cleared by the browser — persistent storage was not granted. Export
+        regularly to keep a backup.
+      </p>
+    {/if}
+    {#if pwaInstall.available}
+      <div class="statusrow">
+        <button class="install" onclick={() => void pwaInstall.prompt()}>Install app</button>
+      </div>
+    {/if}
+  {/if}
+
+  {#if exportNotice !== null}
+    <p class={exportNotice.ok ? 'action-ok' : 'notice-error'} role="status">
+      {exportNotice.text}
+    </p>
+  {/if}
+  {#if importNotice !== null}
+    <p class={importNotice.ok ? 'action-ok' : 'notice-error'} role="status">
+      {importNotice.text}
     </p>
   {/if}
 
   {#if repo.lastError !== null}
-    <p class="boxed notice-error">Storage error: {repo.lastError.message}</p>
+    <p class="notice-error">Storage error: {repo.lastError.message}</p>
   {/if}
 
   {#if !repo.loaded}
-    <p class="hint">Loading courses…</p>
+    <p class="loading">Loading courses…</p>
   {:else if repo.courses.length === 0}
-    <div class="empty">
+    <div class="card empty">
       <p>No courses yet — create your first course to start timing laps.</p>
     </div>
   {:else}
-    <ul class="courses">
+    <div class="list courses">
       {#each repo.courses as course (course.id)}
-        <li>
-          <a class="course-link" href={hashFor({ id: 'course', courseId: course.id })}>
-            <span class="name">{course.name}</span>
-            <span class="meta">
-              {directionArrow(course.direction)} · min lap {formatMinLap(course.minLapTimeMs)}
-            </span>
-          </a>
-          <a class="fly-button" href={hashFor({ id: 'fly', courseId: course.id })}>Fly</a>
-        </li>
+        {@const stats = statsByCourse?.get(course.id)}
+        <a class="card course course-link" href={hashFor({ id: 'course', courseId: course.id })}>
+          <div class="top">
+            <div>
+              <div class="cname">{course.name}</div>
+              <div class="meta">{courseMeta(stats)}</div>
+            </div>
+            <svg class="ic chev" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6" /></svg>
+          </div>
+          <RecTiles
+            bestLapMs={stats?.records.bestLap?.durationMs}
+            bestThreeMs={stats?.records.bestThreeConsecutive?.totalMs}
+          />
+        </a>
       {/each}
-    </ul>
+    </div>
   {/if}
 
   {#if repo.loaded}
-    <a class="new-course" href={hashFor({ id: 'new-course' })}>New course</a>
+    <a class="fab" href={hashFor({ id: 'new-course' })}>
+      <svg class="ic plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14" /></svg>
+      New course
+    </a>
   {/if}
-
-  <div class="data-actions">
-    <div class="buttons">
-      <button onclick={() => void exportAll()} disabled={exporting}>
-        {exporting ? 'Exporting…' : 'Export data'}
-      </button>
-      <button onclick={() => importInput?.click()} disabled={importing}>
-        {importing ? 'Importing…' : 'Import data'}
-      </button>
-      <input
-        class="import-input"
-        type="file"
-        accept=".json,application/json"
-        bind:this={importInput}
-        onchange={onImportChange}
-      />
-      {#if pwaInstall.available}
-        <button onclick={() => void pwaInstall.prompt()}>Install app</button>
-      {/if}
-    </div>
-    {#if exportNotice !== null}
-      <p class={exportNotice.ok ? 'action-ok' : 'action-failed notice-error'} role="status">
-        {exportNotice.text}
-      </p>
-    {/if}
-    {#if importNotice !== null}
-      <p class={importNotice.ok ? 'action-ok' : 'action-failed notice-error'} role="status">
-        {importNotice.text}
-      </p>
-    {/if}
-  </div>
 
   <footer class="links">
     <a href={hashFor({ id: 'diag' })}>diagnostics</a>
@@ -170,173 +230,112 @@
 
 <style>
   main {
-    text-align: center;
-    padding-top: 3rem;
-  }
-
-  h1 {
-    margin-bottom: 0.25rem;
-  }
-
-  .tagline {
-    opacity: 0.7;
-    margin-top: 0;
-  }
-
-  .banner {
-    max-width: 26rem;
-    margin: 1rem auto;
-  }
-
-  .persist-warning {
-    max-width: 26rem;
-    margin: 0.5rem auto;
-    font-size: 0.8rem;
-    color: #ffcf8a;
-    opacity: 0.85;
-  }
-
-  .boxed {
-    max-width: 26rem;
-    margin: 1rem auto;
-  }
-
-  .hint,
-  .empty {
-    margin: 2.5rem auto 1.5rem;
-    max-width: 26rem;
-    opacity: 0.75;
-  }
-
-  .courses {
-    list-style: none;
-    padding: 0;
-    max-width: 28rem;
-    margin: 2rem auto 1.5rem;
     display: flex;
     flex-direction: column;
-    gap: 0.6rem;
-  }
-
-  .courses li {
-    display: flex;
-    align-items: stretch;
-    gap: 0.6rem;
-  }
-
-  .course-link {
-    flex: 1;
-    display: flex;
-    flex-direction: column;
-    align-items: flex-start;
-    gap: 0.15rem;
-    padding: 0.6rem 0.9rem;
-    border-radius: 0.5rem;
-    background: #16233c;
-    border: 1px solid #2c3850;
-    color: #e8edf7;
-    text-decoration: none;
-    text-align: left;
-  }
-
-  .course-link:hover {
-    border-color: #7ea6ff;
-  }
-
-  .name {
-    font-weight: 600;
-    font-size: 1.05rem;
-  }
-
-  .meta {
-    font-size: 0.85rem;
-    opacity: 0.7;
-  }
-
-  .fly-button {
-    display: flex;
-    align-items: center;
-    padding: 0 1.4rem;
-    border-radius: 0.5rem;
-    background: #1d3a6e;
-    border: 1px solid #3b5fa3;
-    color: #e8edf7;
-    font-size: 1.1rem;
-    font-weight: 600;
-    text-decoration: none;
-  }
-
-  .fly-button:hover {
-    border-color: #7ea6ff;
-  }
-
-  .new-course {
-    display: inline-block;
-    margin: 0.5rem 0 3rem;
-    padding: 0.6rem 1.6rem;
-    border-radius: 0.5rem;
-    background: #16233c;
-    border: 1px solid #2c3850;
-    color: #e8edf7;
-    font-size: 1rem;
-    font-weight: 600;
-    text-decoration: none;
-  }
-
-  .new-course:hover {
-    border-color: #7ea6ff;
-  }
-
-  .data-actions {
-    margin: 0 auto 1.5rem;
-    max-width: 26rem;
-  }
-
-  .data-actions .buttons {
-    display: flex;
-    justify-content: center;
-    flex-wrap: wrap;
-    gap: 0.6rem;
-  }
-
-  .data-actions button {
-    background: #16233c;
-    color: #e8edf7;
-    border: 1px solid #2c3850;
-    border-radius: 0.375rem;
-    padding: 0.45rem 1.2rem;
-    font-size: 0.9rem;
-    cursor: pointer;
-  }
-
-  .data-actions button:hover:not(:disabled) {
-    border-color: #7ea6ff;
-  }
-
-  .data-actions button:disabled {
-    opacity: 0.45;
-    cursor: default;
+    gap: 14px;
   }
 
   .import-input {
     display: none;
   }
 
+  .statusrow {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.6rem;
+  }
+
+  .install {
+    background: var(--c-panel);
+    color: var(--c-ink);
+    border: 1px solid var(--c-line);
+    border-radius: 999px;
+    padding: 5px 12px;
+    font-size: 0.8rem;
+    cursor: pointer;
+  }
+
+  .install:hover {
+    border-color: var(--c-signal-dim);
+  }
+
+  .notice-warning,
+  .notice-error,
+  .action-ok,
+  .loading {
+    margin: 0;
+  }
+
   .action-ok {
-    margin: 0.5rem 0 0;
     font-size: 0.85rem;
-    color: #86efac;
+    color: var(--c-signal);
     overflow-wrap: anywhere;
   }
 
-  .action-failed {
-    margin: 0.5rem 0 0;
+  .loading,
+  .empty {
+    color: var(--c-dim);
+  }
+
+  .empty p {
+    margin: 0;
+  }
+
+  .courses {
+    gap: 12px;
+  }
+
+  a.course-link {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    color: inherit;
+    text-decoration: none;
+  }
+
+  a.course-link:hover {
+    border-color: var(--c-signal-dim);
+  }
+
+  .top {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 10px;
+  }
+
+  .cname {
+    font-size: 1.04rem;
+    font-weight: 600;
+    letter-spacing: -0.01em;
+  }
+
+  .meta {
+    font-family: var(--font-mono);
+    font-size: 0.68rem;
+    color: var(--c-dim);
+    margin-top: 3px;
+  }
+
+  .chev {
+    color: var(--c-dim2);
+    flex: none;
+  }
+
+  a.fab {
+    text-decoration: none;
+  }
+
+  .plus {
+    width: 20px;
+    height: 20px;
   }
 
   .links {
     display: flex;
-    justify-content: center;
     gap: 1.5rem;
+    margin-top: 1rem;
     font-size: 0.85rem;
     opacity: 0.6;
   }
@@ -350,8 +349,7 @@
     .courses {
       display: grid;
       grid-template-columns: 1fr 1fr;
-      gap: 0.8rem;
-      max-width: 46rem;
+      align-items: start;
     }
   }
 </style>

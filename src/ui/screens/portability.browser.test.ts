@@ -45,6 +45,12 @@ function buttonByText(label: string): HTMLButtonElement {
   return button
 }
 
+function buttonByLabel(label: string): HTMLButtonElement {
+  const button = container.querySelector<HTMLButtonElement>(`button[aria-label="${label}"]`)
+  if (!button) throw new Error(`no button with aria-label ${JSON.stringify(label)}`)
+  return button
+}
+
 function importFile(content: string, name = 'export.json'): void {
   const input = container.querySelector<HTMLInputElement>('input[type="file"]')
   if (!input) throw new Error('no import file input')
@@ -86,7 +92,7 @@ describe('import flow (Home + MemoryStorage)', () => {
   it('merges a valid export, reports counts, and shows the imported course', async () => {
     const storage = new MemoryStorage()
     mountApp(storage)
-    await waitForText('Tiny-whoop lap timer')
+    await waitForText('Courses')
 
     const envelope = makeEnvelope({
       courses: [makeCourse({ id: 'c-imp', name: 'Imported loop' })],
@@ -127,7 +133,7 @@ describe('import flow (Home + MemoryStorage)', () => {
 
   it('shows a friendly error for a file that is not a valid export', async () => {
     mountApp(new MemoryStorage())
-    await waitForText('Tiny-whoop lap timer')
+    await waitForText('Courses')
 
     importFile('this is { not json')
 
@@ -136,7 +142,7 @@ describe('import flow (Home + MemoryStorage)', () => {
 
   it('refuses a newer-version export with the update-the-app message', async () => {
     mountApp(new MemoryStorage())
-    await waitForText('Tiny-whoop lap timer')
+    await waitForText('Courses')
 
     importFile(JSON.stringify({ ...makeEnvelope(), schemaVersion: SCHEMA_VERSION + 1 }))
 
@@ -161,7 +167,7 @@ describe('export delivery (Home + patched Web Share API)', () => {
     mountApp(storage)
     await waitForText('Garage loop')
 
-    buttonByText('Export data').click()
+    buttonByLabel('Export').click()
 
     await waitForText('Exported chronowhoop-export-')
     expect(share).toHaveBeenCalledTimes(1)
@@ -184,7 +190,7 @@ describe('export delivery (Home + patched Web Share API)', () => {
     mountApp(storage)
     await waitForText('Garage loop')
 
-    buttonByText('Export data').click()
+    buttonByLabel('Export').click()
 
     await waitForText('Exported chronowhoop-export-')
     expect(text()).not.toContain('Storage error')
@@ -203,7 +209,7 @@ describe('export delivery (Home + patched Web Share API)', () => {
     mountApp(storage)
     await waitForText('Garage loop')
 
-    buttonByText('Export data').click()
+    buttonByLabel('Export').click()
 
     await vi.waitFor(() => expect(share).toHaveBeenCalledTimes(1))
     await new Promise((resolve) => setTimeout(resolve, 50))
@@ -216,7 +222,7 @@ describe('export delivery (Home + patched Web Share API)', () => {
 describe('install button (beforeinstallprompt)', () => {
   it('appears when the event fires, prompts on click, then hides', async () => {
     mountApp(new MemoryStorage())
-    await waitForText('Tiny-whoop lap timer')
+    await waitForText('Courses')
     expect(text()).not.toContain('Install app')
 
     const prompt = vi.fn().mockResolvedValue(undefined)

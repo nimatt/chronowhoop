@@ -58,9 +58,16 @@ function setInputValue(input: HTMLInputElement, value: string) {
   input.dispatchEvent(new Event('input', { bubbles: true }))
 }
 
-function setSelectValue(select: HTMLSelectElement, value: string) {
-  select.value = value
-  select.dispatchEvent(new Event('change', { bubbles: true }))
+function buttonByLabel(label: string): HTMLButtonElement {
+  return query<HTMLButtonElement>(`button[aria-label="${label}"]`)
+}
+
+function segOptionByText(label: string): HTMLButtonElement {
+  const button = Array.from(container.querySelectorAll<HTMLButtonElement>('.seg .opt')).find(
+    (candidate) => candidate.textContent?.includes(label),
+  )
+  if (!button) throw new Error(`no segmented option labelled ${JSON.stringify(label)}`)
+  return button
 }
 
 beforeEach(() => {
@@ -89,24 +96,35 @@ describe('course CRUD flow (App + MemoryStorage)', () => {
     await waitForText('Minimum lap time')
 
     setInputValue(query('input[type="text"]'), 'Basement 3-gate')
-    setSelectValue(query('select'), 'rtl')
-    setInputValue(query('input[type="number"]'), '4.5')
-    await vi.waitFor(() => expect(buttonByText('Save').disabled).toBe(false))
-    buttonByText('Save').click()
+    segOptionByText('Right to left').click()
+    // The stepper walks in 0.5 s steps from the 3.0 s default.
+    buttonByLabel('Increase minimum lap time').click()
+    buttonByLabel('Increase minimum lap time').click()
+    buttonByLabel('Increase minimum lap time').click()
+    await waitForText('4.5')
+    await vi.waitFor(() => expect(buttonByText('Create course').disabled).toBe(false))
+    buttonByText('Create course').click()
 
-    // Save navigates to the course view shell.
+    // Save navigates to the course view shell (subtitle carries direction and
+    // min lap).
     await waitForText('Sessions')
     expect(text()).toContain('Basement 3-gate')
-    expect(text()).toContain('right → left')
-    expect(text()).toContain('min lap 4.5 s')
+    expect(text()).toContain('Right → Left')
+    expect(text()).toContain('min 4.5 s')
     expect(location.hash).toMatch(/^#\/course\/[0-9a-f-]+$/)
 
-    // Home lists the course with a per-course Fly affordance.
-    linkByText('Courses').click()
-    await waitForText('Basement 3-gate')
+    // Home lists the course as a card linking to the course view (flying
+    // starts from the course view's Start session). "Courses" (the Home app
+    // bar) marks the navigation — the course view itself also says
+    // "Basement 3-gate".
+    query<HTMLAnchorElement>('a[aria-label="Back"]').click()
+    await waitForText('Courses')
+    await vi.waitFor(() => expect(container.querySelector('.course-link')).not.toBeNull())
+    expect(text()).toContain('Basement 3-gate')
     expect(text()).not.toContain('create your first course')
-    const flyLink = linkByText('Fly')
-    expect(flyLink.getAttribute('href')).toMatch(/^#\/fly\/[0-9a-f-]+$/)
+    const courseCard = query<HTMLAnchorElement>('.course-link')
+    expect(courseCard.getAttribute('href')).toMatch(/^#\/course\/[0-9a-f-]+$/)
+    expect(text()).not.toContain('Start session')
   })
 
   it('edits an existing course and rejects an empty name', async () => {

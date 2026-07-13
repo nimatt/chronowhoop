@@ -9,46 +9,85 @@
   // identity works because the records run over the same snapshot array the
   // rows render from.
   const records = $derived(sessionRecords(laps))
-  const bestThreeLaps = $derived(new Set<Lap>(records.bestThreeConsecutive?.laps ?? []))
+  const bestWindow = $derived(records.bestThreeConsecutive)
+  const bestThreeLaps = $derived(new Set<Lap>(bestWindow?.laps ?? []))
+  // The mockup puts the bracket label ABOVE the window by splitting the table
+  // around it. The label is a plain element between two tables, never a
+  // <tbody> row — tests count laps as `tbody tr`.
+  const windowStart = $derived(
+    bestWindow === undefined ? laps.length : laps.indexOf(bestWindow.laps[0]),
+  )
 </script>
+
+{#snippet cols()}
+  <colgroup>
+    <col class="c-lap" />
+    <col class="c-dur" />
+    <col class="c-time" />
+    <col class="c-status" />
+  </colgroup>
+{/snippet}
+
+{#snippet lapRows(rows: readonly Lap[])}
+  {#each rows as lap (lap.n)}
+    <tr
+      class:discarded={lap.status === 'discarded'}
+      class:best={lap === records.bestLap}
+      class:best-three={bestThreeLaps.has(lap)}
+      class:b3band={bestThreeLaps.has(lap)}
+      class:first={bestWindow !== undefined && lap === bestWindow.laps[0]}
+    >
+      <td><span class="lap-num"><span class="bar-i"></span>{lap.n}</span></td>
+      <td>
+        {formatLapSeconds(lap.durationMs)}
+        {#if lap === records.bestLap}<span class="best-tag">best</span>{/if}
+      </td>
+      <td><span class="tod">{formatTimeOfDay(lap.completedAt)}</span></td>
+      <td>
+        {#if lap.status === 'discarded'}
+          <span class="disc-tag">discarded</span>
+        {:else}
+          <span class="st-valid">{lap.status}</span>
+        {/if}
+      </td>
+    </tr>
+  {/each}
+{/snippet}
 
 {#if laps.length === 0}
   <p class="hint">No laps completed.</p>
 {:else}
   <div class="table-scroll">
-    <table>
+    <table class="table">
+      {@render cols()}
       <thead>
         <tr>
-          <th>#</th>
-          <th>duration (s)</th>
-          <th>time of day</th>
-          <th>status</th>
+          <th>Lap</th>
+          <th>Duration</th>
+          <th>Time</th>
+          <th>Status</th>
         </tr>
       </thead>
       <tbody>
-        {#each laps as lap (lap.n)}
-          <tr
-            class:discarded={lap.status === 'discarded'}
-            class:best={lap === records.bestLap}
-            class:best-three={bestThreeLaps.has(lap)}
-          >
-            <td class="num">{lap.n}</td>
-            <td class="num">
-              {formatLapSeconds(lap.durationMs)}
-              {#if lap === records.bestLap}<span class="tag">best</span>{/if}
-            </td>
-            <td class="num">{formatTimeOfDay(lap.completedAt)}</td>
-            <td>{lap.status}</td>
-          </tr>
-        {/each}
+        {@render lapRows(laps.slice(0, windowStart))}
       </tbody>
     </table>
+    {#if bestWindow !== undefined}
+      <div class="b3label">
+        <span>◄ Best 3 consecutive</span>
+        <span>{formatLapSeconds(bestWindow.totalMs)} s</span>
+      </div>
+      <table class="table">
+        {@render cols()}
+        <tbody>
+          {@render lapRows(laps.slice(windowStart))}
+        </tbody>
+      </table>
+    {/if}
   </div>
-  {#if records.bestThreeConsecutive !== undefined}
+  {#if bestWindow !== undefined}
     <p class="hint legend">
-      <span class="swatch"></span> best three consecutive — {formatLapSeconds(
-        records.bestThreeConsecutive.totalMs,
-      )} s total
+      best three consecutive — {formatLapSeconds(bestWindow.totalMs)} s total
     </p>
   {/if}
 {/if}
@@ -58,72 +97,48 @@
     overflow-x: auto;
   }
 
+  /* Fixed layout with a shared colgroup keeps the columns of the two tables
+     (split around the .b3label bracket) aligned. */
   table {
-    border-collapse: collapse;
-    width: 100%;
-    font-size: 1rem;
+    table-layout: fixed;
   }
 
-  th,
-  td {
-    border: 1px solid #22304a;
-    padding: 0.4rem 0.6rem;
-    text-align: left;
+  .c-lap {
+    width: 28%;
   }
 
-  th {
-    background: #131e33;
-    font-weight: 600;
-    font-size: 0.85rem;
+  .c-dur {
+    width: 26%;
   }
 
-  td.num {
-    font-family: monospace;
-    text-align: right;
-    white-space: nowrap;
+  .c-time {
+    width: 26%;
   }
 
-  tr.best-three td {
-    background: #16233c;
-    border-left-color: #7ea6ff;
+  .c-status {
+    width: 20%;
   }
 
-  tr.best-three td:first-child {
-    border-left: 3px solid #7ea6ff;
+  .best-tag {
+    font-family: var(--font-mono);
+    font-size: 0.54rem;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--c-record);
+    margin-left: 6px;
+    display: inline-block;
+    vertical-align: middle;
   }
 
-  tr.best td {
-    background: #14532d;
-  }
-
-  tr.discarded td {
-    text-decoration: line-through;
-    opacity: 0.55;
-  }
-
-  .tag {
-    margin-left: 0.5rem;
-    padding: 0.05rem 0.4rem;
-    border-radius: 0.375rem;
-    background: #86efac;
-    color: #0b1220;
+  .st-valid {
     font-size: 0.7rem;
-    font-weight: 700;
-    text-decoration: none;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--c-dim2);
   }
 
   .legend {
-    display: flex;
-    align-items: center;
-    gap: 0.4rem;
-  }
-
-  .swatch {
-    display: inline-block;
-    width: 0.9rem;
-    height: 0.9rem;
-    border-radius: 0.2rem;
-    background: #16233c;
-    border-left: 3px solid #7ea6ff;
+    margin: 6px 4px 0;
+    text-align: center;
   }
 </style>

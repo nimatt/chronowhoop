@@ -2,24 +2,25 @@ import { describe, expect, it } from 'vitest'
 import { formatLapSeconds, formatRunningClock, formatTimeOfDay } from './fly-format'
 
 describe('formatRunningClock', () => {
-  it('shows seconds.tenths under a minute', () => {
-    expect(formatRunningClock(0)).toBe('0.0')
-    expect(formatRunningClock(14320)).toBe('14.3')
-    expect(formatRunningClock(59999)).toBe('59.9')
+  it('shows ss.hh under a minute, seconds zero-padded (mockup "08.42")', () => {
+    expect(formatRunningClock(0)).toBe('00.00')
+    expect(formatRunningClock(8420)).toBe('08.42')
+    expect(formatRunningClock(14320)).toBe('14.32')
+    expect(formatRunningClock(59999)).toBe('59.99')
   })
 
-  it('truncates to the elapsed tenth (a lap is not over until it is)', () => {
-    expect(formatRunningClock(14399)).toBe('14.3')
+  it('truncates to the elapsed hundredth (a lap is not over until it is)', () => {
+    expect(formatRunningClock(14329)).toBe('14.32')
   })
 
-  it('switches to m:ss.t at one minute', () => {
-    expect(formatRunningClock(60000)).toBe('1:00.0')
-    expect(formatRunningClock(74320)).toBe('1:14.3')
-    expect(formatRunningClock(600000)).toBe('10:00.0')
+  it('switches to m:ss.hh at one minute', () => {
+    expect(formatRunningClock(60000)).toBe('1:00.00')
+    expect(formatRunningClock(74320)).toBe('1:14.32')
+    expect(formatRunningClock(600000)).toBe('10:00.00')
   })
 
   it('clamps negative elapsed (clock-base race) to zero', () => {
-    expect(formatRunningClock(-50)).toBe('0.0')
+    expect(formatRunningClock(-50)).toBe('00.00')
   })
 })
 

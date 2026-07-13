@@ -148,7 +148,7 @@ describe.runIf(typeof defaultMediaStreamTrackProcessor() === 'function')(
     async function startCameraAndWaitForArm(): Promise<void> {
       await waitForText('Rotation gate')
       buttonByText('Start camera').click()
-      await vi.waitFor(() => expect(buttonByText('Arm').disabled).toBe(false), {
+      await vi.waitFor(() => expect(buttonByText('ARM').disabled).toBe(false), {
         timeout: 15000,
       })
     }
@@ -162,7 +162,7 @@ describe.runIf(typeof defaultMediaStreamTrackProcessor() === 'function')(
         await startCameraAndWaitForArm()
         expect(session.boundOrientation).toBe('portrait')
 
-        buttonByText('Arm').click()
+        buttonByText('ARM').click()
         await waitForText('ARMED')
         expect(session.detectionAttached).toBe(true)
         session.injectCrossing({ timestampMs: 1000, direction: 'ltr' }) // starts the clock
@@ -217,7 +217,7 @@ describe.runIf(typeof defaultMediaStreamTrackProcessor() === 'function')(
         const session = await mountFlow(orientation)
 
         await startCameraAndWaitForArm()
-        buttonByText('Arm').click()
+        buttonByText('ARM').click()
         await waitForText('ARMED')
 
         orientation.rotateTo('landscape')
@@ -227,7 +227,7 @@ describe.runIf(typeof defaultMediaStreamTrackProcessor() === 'function')(
         // Stop without ever restoring the orientation: the restore path (the
         // usual notice raiser) never runs, but the gap must survive to the
         // stopped panel.
-        buttonByText('Stop').click()
+        buttonByText('STOP').click()
         await waitForText('Session over')
         expect(text()).toContain(INTERRUPTION_NOTICE)
         expect(text()).not.toContain(WARNING)
@@ -247,7 +247,7 @@ describe.runIf(typeof defaultMediaStreamTrackProcessor() === 'function')(
         orientation.rotateTo('landscape')
         await waitForText(WARNING)
         await vi.waitFor(() => {
-          expect(buttonByText('Arm').disabled).toBe(true)
+          expect(buttonByText('ARM').disabled).toBe(true)
           expect(buttonByText('Test mode').disabled).toBe(true)
         })
         // The session-level guards are authoritative even past the buttons.
@@ -258,8 +258,8 @@ describe.runIf(typeof defaultMediaStreamTrackProcessor() === 'function')(
 
         orientation.rotateTo('portrait')
         await vi.waitFor(() => expect(text()).not.toContain(WARNING))
-        await vi.waitFor(() => expect(buttonByText('Arm').disabled).toBe(false))
-        buttonByText('Arm').click()
+        await vi.waitFor(() => expect(buttonByText('ARM').disabled).toBe(false))
+        buttonByText('ARM').click()
         await waitForText('ARMED')
       },
       45000,

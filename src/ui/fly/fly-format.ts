@@ -1,16 +1,16 @@
-// Pure formatting for the fly screen. The running clock shows tenths (the
-// glanceable mid-flight precision); the lap table shows two decimals per
-// product.md's session view.
+// Pure formatting for the fly screen. The running clock shows hundredths with
+// two-digit seconds ("08.42", mockup 06) — the same precision as lap
+// durations; the lap table shows two decimals per product.md's session view.
 
 import type { IsoDateString } from '../../core/domain/types'
 
 export function formatRunningClock(elapsedMs: number): string {
-  const totalTenths = Math.floor(Math.max(0, elapsedMs) / 100)
-  const minutes = Math.floor(totalTenths / 600)
-  const seconds = Math.floor((totalTenths % 600) / 10)
-  const tenths = totalTenths % 10
-  if (minutes === 0) return `${seconds}.${tenths}`
-  return `${minutes}:${String(seconds).padStart(2, '0')}.${tenths}`
+  const totalHundredths = Math.floor(Math.max(0, elapsedMs) / 10)
+  const minutes = Math.floor(totalHundredths / 6000)
+  const seconds = Math.floor((totalHundredths % 6000) / 100)
+  const hundredths = totalHundredths % 100
+  const ssHh = `${String(seconds).padStart(2, '0')}.${String(hundredths).padStart(2, '0')}`
+  return minutes === 0 ? ssHh : `${minutes}:${ssHh}`
 }
 
 export function formatLapSeconds(durationMs: number): string {

@@ -62,10 +62,17 @@
     style:width={`${roi.width * 100}%`}
     style:height={`${roi.height * 100}%`}
   >
+    <!-- Only the corners are drag handles (roi-interaction hit-tests
+         corners; elsewhere drags move the whole rect). The edge midpoints
+         are the mockup's visual dressing, not extra interactions. -->
     <span class="handle nw"></span>
     <span class="handle ne"></span>
     <span class="handle sw"></span>
     <span class="handle se"></span>
+    <span class="handle n"></span>
+    <span class="handle s"></span>
+    <span class="handle w"></span>
+    <span class="handle e"></span>
   </div>
 </div>
 
@@ -78,9 +85,13 @@
     overflow: hidden;
   }
 
+  /* Mockup .roi: dashed cyan with a faint cyan wash; the dark outside mask is
+     kept — it reads as "this is the watched region" on a live preview. */
   .roi {
     position: absolute;
-    border: 1.5px solid #ffd27e;
+    border: 1.5px dashed var(--c-signal);
+    border-radius: 4px;
+    background: rgba(51, 222, 207, 0.05);
     box-shadow: 0 0 0 9999px rgb(0 0 0 / 35%);
     box-sizing: border-box;
   }
@@ -89,8 +100,9 @@
     position: absolute;
     width: 12px;
     height: 12px;
-    background: #ffd27e;
-    border-radius: 50%;
+    background: var(--c-signal);
+    border: 2px solid var(--c-ground);
+    border-radius: 3px;
     transform: translate(-50%, -50%);
   }
 
@@ -112,5 +124,25 @@
   .se {
     left: 100%;
     top: 100%;
+  }
+
+  .n {
+    left: 50%;
+    top: 0;
+  }
+
+  .s {
+    left: 50%;
+    top: 100%;
+  }
+
+  .w {
+    left: 0;
+    top: 50%;
+  }
+
+  .e {
+    left: 100%;
+    top: 50%;
   }
 </style>

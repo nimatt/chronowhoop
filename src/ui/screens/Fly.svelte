@@ -6,10 +6,11 @@
   import FlyFlow from '../fly/FlyFlow.svelte'
   import type { FlySession } from '../fly/fly-session'
 
-  // The #/fly/<courseId> loader: resolves the course and the detection-config
-  // prefill (the course's most recent session's snapshot, product.md setup
-  // step) BEFORE mounting the actual flow, so FlyFlow can create its session
-  // synchronously against a real Course. App keys this screen on courseId.
+  // The #/fly/<courseId> loader: resolves the course and the prefills (the
+  // course's most recent session's detection-config snapshot and note,
+  // product.md setup step) BEFORE mounting the actual flow, so FlyFlow can
+  // create its session synchronously against a real Course. App keys this
+  // screen on courseId.
   let {
     context,
     courseId,
@@ -27,12 +28,15 @@
 
   void coursesRepo.ensureLoaded()
 
-  // One-shot: undefined while loading; after that the snapshot or null (no
-  // previous session, or the lookup failed — both fall back to defaults).
-  let prefill = $state<SessionDetectionConfig | null | undefined>(undefined)
+  // One-shot: undefined while loading; after that the latest session's
+  // prefills (no previous session, or a failed lookup, both fall back to
+  // defaults: no detection config, empty note).
+  let prefill = $state<
+    { detectionConfig: SessionDetectionConfig | undefined; note: string } | undefined
+  >(undefined)
   // svelte-ignore state_referenced_locally
   void context.sessionsRepo.latestForCourse(courseId).then((latest) => {
-    prefill = latest?.detectionConfig ?? null
+    prefill = { detectionConfig: latest?.detectionConfig, note: latest?.note ?? '' }
   })
 
   const course = $derived(coursesRepo.courseById(courseId))
@@ -55,7 +59,8 @@
   <FlyFlow
     {context}
     {course}
-    initialDetectionConfig={prefill ?? undefined}
+    initialDetectionConfig={prefill?.detectionConfig}
+    initialNote={prefill?.note ?? ''}
     {mediaDevices}
     {onsession}
   />

@@ -62,6 +62,15 @@
     color: #ff8aa0;
   }
 
+  /* This row's label is body text — neutralize the global .label token class
+     (App.svelte's mockup vocabulary). */
+  .label {
+    font: inherit;
+    letter-spacing: normal;
+    text-transform: none;
+    color: inherit;
+  }
+
   .detail {
     flex-basis: 100%;
     font-size: 0.85rem;
