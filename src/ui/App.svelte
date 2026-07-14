@@ -2,11 +2,14 @@
   import type { CameraMediaDevicesLike } from '../core/camera/camera-service'
   import { checkCapabilities, type CapabilityReport } from '../core/capabilities/capabilities'
   import { routeFromHash, shouldShowUnsupportedScreen } from '../core/routing/route'
+  import type { ResumeOutcome } from '../core/storage/storage'
   import { createStorageContext, type StorageContextOptions } from './data/storage-context.svelte'
   import type { FlySession } from './fly/fly-session'
   import { initPwaInstall } from './pwa-install.svelte'
   import CourseForm from './screens/CourseForm.svelte'
   import CourseView from './screens/CourseView.svelte'
+  import DeleteCourse from './screens/DeleteCourse.svelte'
+  import DeleteSession from './screens/DeleteSession.svelte'
   import Home from './screens/Home.svelte'
   import Diag from './screens/Diag.svelte'
   import Fly from './screens/Fly.svelte'
@@ -47,18 +50,35 @@
   void check().then((result) => {
     report = result
   })
+
+  // Resume notices (plan 09 items 9+10). They live here, not on Home: the app
+  // restores the last hash route, so a relaunch after a crashed delete may land
+  // anywhere.
+  function resumeNotice(outcome: ResumeOutcome): string {
+    if (outcome.kind === 'completed') {
+      return `Finished deleting "${outcome.courseName}" — an earlier deletion was interrupted.`
+    }
+    return `An interrupted deletion of "${outcome.courseName}" was abandoned — you have flown on it since.`
+  }
 </script>
 
 <svelte:window onhashchange={() => (route = routeFromHash(location.hash))} />
 
 {#each context.quarantineNotices as notice (notice.id)}
-  <div class="quarantine notice-warning" role="alert">
+  <div class="appnotice notice-warning" role="alert">
     <span>
       A stored file was corrupt and set aside{notice.quarantinedTo
         ? ` as ${notice.quarantinedTo}`
         : ''}: {notice.fileName}
     </span>
     <button onclick={() => context.dismissQuarantineNotice(notice.id)}>Dismiss</button>
+  </div>
+{/each}
+
+{#each context.deletionNotices as notice (notice.id)}
+  <div class="appnotice notice-warning" role="alert">
+    <span>{resumeNotice(notice.outcome)}</span>
+    <button onclick={() => context.dismissDeletionNotice(notice.id)}>Dismiss</button>
   </div>
 {/each}
 
@@ -92,6 +112,15 @@
        course-A → course-B hash edit must remount, not reuse. -->
   {#key route.courseId}
     <CourseView {context} courseId={route.courseId} />
+  {/key}
+{:else if route.id === 'delete-course'}
+  <!-- Keyed: the confirm screens count their blast radius once per mount. -->
+  {#key route.courseId}
+    <DeleteCourse {context} courseId={route.courseId} />
+  {/key}
+{:else if route.id === 'delete-session'}
+  {#key route.sessionId}
+    <DeleteSession {context} sessionId={route.sessionId} />
   {/key}
 {:else}
   <Home {context} />
@@ -287,9 +316,21 @@
       color: var(--c-ink);
     }
 
+    /* Filled danger is RESERVED (plan 09 item 11): the confirm button on the
+       delete screens, and the armed STOP button pilots slam from muscle memory.
+       Nothing else may wear it. */
     .btn-danger {
       background: var(--c-danger);
       color: #1b0407;
+    }
+
+    /* The INITIATING danger controls (the edit form's delete, the session view's)
+       — loud enough to read as destruction, quiet enough that it is not the thing
+       your thumb lands on. Reuses .notice-error's rgba pair above. */
+    .btn-danger-ghost {
+      background: rgba(255, 82, 101, 0.08);
+      border-color: rgba(255, 82, 101, 0.4);
+      color: var(--c-danger);
     }
 
     .btn-stop {
@@ -597,7 +638,9 @@
     opacity: 0.7;
   }
 
-  .quarantine {
+  /* App-level dismissible notices: quarantine (a corrupt file was set aside)
+     and deletion resume (a crashed cascade was finished or abandoned). */
+  .appnotice {
     display: flex;
     align-items: center;
     justify-content: space-between;
@@ -606,7 +649,7 @@
     margin: 0.5rem auto 0;
   }
 
-  .quarantine button {
+  .appnotice button {
     flex-shrink: 0;
     background: transparent;
     color: inherit;

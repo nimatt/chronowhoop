@@ -15,9 +15,21 @@
 //   fail and pollute the repo's shared lastError channel ("Storage error"
 //   above a successful export notice). The nudge keeps firing there — honest,
 //   since nothing was recorded.
+//
+// The envelope comes from CoursesRepo.exportAll (plan 09 item 6) — the
+// courses.json critical section — and can no longer come from anywhere else:
+// Storage.exportAll reads the course list and scans the session files as two
+// unsynchronized reads, and a deletion cascade committing between them yields
+// an envelope missing a course while still carrying its sessions, which
+// re-import as orphans. The delete-confirm screen offers "Export backup first",
+// so this is the export that has to be trustworthy. This module used to call
+// storage.exportAll() through context.storage — an invariant violation the
+// compiler happily allowed; the handle is now gone from StorageContext and the
+// lint seam bans reaching for it again. The repo reports failure as null with
+// lastError set; it never rejects.
 
-import { exportAllToBlob } from '../../core/storage/export'
-import { storageReadOnly, type StorageContext } from '../data/storage-context'
+import { exportEnvelopeToBlob } from '../../core/storage/export'
+import type { StorageContext } from '../data/storage-context'
 import { deliverExport } from './deliver-export'
 
 export type ExportOutcome =
@@ -27,10 +39,17 @@ export type ExportOutcome =
 
 export async function runExport(context: StorageContext): Promise<ExportOutcome> {
   try {
-    const { blob, filename, exportedAt } = await exportAllToBlob(context.storage)
+    const envelope = await context.coursesRepo.exportAll()
+    if (envelope === null) {
+      return {
+        kind: 'failed',
+        message: context.coursesRepo.lastError?.message ?? 'the export could not be assembled',
+      }
+    }
+    const { blob, filename, exportedAt } = exportEnvelopeToBlob(envelope)
     const delivery = await deliverExport(blob, filename)
     if (delivery === 'cancelled') return { kind: 'cancelled' }
-    if (!storageReadOnly(context.storage)) {
+    if (!context.liveReadOnly()) {
       void context.coursesRepo.updateSettings({ lastExportAt: exportedAt })
     }
     return { kind: 'delivered', filename }

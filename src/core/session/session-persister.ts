@@ -43,6 +43,14 @@ export interface PersisterError {
   message: string
 }
 
+// The only Storage member the live-session write path needs. Named, and
+// narrowed, so the fly flow can be handed a handle that CANNOT reach the
+// courses.json members (saveCourses / deleteCourse / importAll / exportAll /
+// resumePendingDeletions) — those belong to CoursesRepo's critical section and
+// nothing else (repos.ts). saveSession is not part of it: it writes one session
+// file, atomically, and never touches courses.json.
+export type SessionWriter = Pick<Storage, 'saveSession'>
+
 export interface PersisterState {
   // Unsaved data exists: a save is in flight, queued, or awaiting retry.
   pending: boolean
@@ -81,7 +89,7 @@ function toPersisterError(error: unknown): PersisterError {
 }
 
 export function createSessionPersister(
-  storage: Storage,
+  storage: SessionWriter,
   options: SessionPersisterOptions = {},
 ): SessionPersister {
   const scheduleFn = options.scheduleFn ?? ((fn, ms) => setTimeout(fn, ms))

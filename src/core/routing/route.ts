@@ -1,9 +1,9 @@
 // Hand-rolled hash routing (ADR 0007, params added in Phase 6). Hash forms:
 // #/ (home), #/diag, #/lab, #/fly/<courseId>, #/course/<id>, #/session/<id>,
-// #/course/new, #/course/<id>/edit. Anything unknown or malformed maps to
-// home. Ids are opaque non-empty segments (crypto.randomUUID in practice);
-// "new" is reserved by the #/course/new form and can never be a course id in
-// a parsed route.
+// #/course/new, #/course/<id>/edit, #/course/<id>/delete,
+// #/session/<id>/delete. Anything unknown or malformed maps to home. Ids are
+// opaque non-empty segments (crypto.randomUUID in practice); "new" is reserved
+// by the #/course/new form and can never be a course id in a parsed route.
 
 export type Route =
   | { id: 'home' }
@@ -14,6 +14,8 @@ export type Route =
   | { id: 'session'; sessionId: string }
   | { id: 'new-course' }
   | { id: 'edit-course'; courseId: string }
+  | { id: 'delete-course'; courseId: string }
+  | { id: 'delete-session'; sessionId: string }
 
 const HOME: Route = { id: 'home' }
 
@@ -30,15 +32,20 @@ export function routeFromHash(hash: string): Route {
     case 'fly':
       return segments.length === 2 ? { id: 'fly', courseId: segments[1] } : HOME
     case 'session':
-      return segments.length === 2 ? { id: 'session', sessionId: segments[1] } : HOME
+      if (segments.length === 2) return { id: 'session', sessionId: segments[1] }
+      if (segments.length === 3 && segments[2] === 'delete') {
+        return { id: 'delete-session', sessionId: segments[1] }
+      }
+      return HOME
     case 'course':
       if (segments.length === 2) {
         return segments[1] === 'new'
           ? { id: 'new-course' }
           : { id: 'course', courseId: segments[1] }
       }
-      if (segments.length === 3 && segments[2] === 'edit' && segments[1] !== 'new') {
-        return { id: 'edit-course', courseId: segments[1] }
+      if (segments.length === 3 && segments[1] !== 'new') {
+        if (segments[2] === 'edit') return { id: 'edit-course', courseId: segments[1] }
+        if (segments[2] === 'delete') return { id: 'delete-course', courseId: segments[1] }
       }
       return HOME
     default:
@@ -66,6 +73,10 @@ export function hashFor(route: Route): string {
       return '#/course/new'
     case 'edit-course':
       return `#/course/${route.courseId}/edit`
+    case 'delete-course':
+      return `#/course/${route.courseId}/delete`
+    case 'delete-session':
+      return `#/session/${route.sessionId}/delete`
   }
 }
 

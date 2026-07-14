@@ -38,7 +38,13 @@ function fakeStoppedSession(): FlySession {
   } as unknown as FlySession
 }
 
-async function seededContext(settings: AppSettings): Promise<StorageContext> {
+// Returns the storage alongside the context: StorageContext deliberately does
+// not expose its Storage (the courses.json critical-section seam — plan 09 item
+// 6), so a test that wants to read the file back keeps its own handle. That is
+// a test seam, and it is the whole point that product code has no equivalent.
+async function seededContext(
+  settings: AppSettings,
+): Promise<{ context: StorageContext; storage: MemoryStorage }> {
   const storage = new MemoryStorage()
   await storage.saveCourses({ courses: [makeCourse({ id: 'c-1' })], settings })
   await storage.saveSession(
@@ -46,7 +52,7 @@ async function seededContext(settings: AppSettings): Promise<StorageContext> {
   )
   const context = createStorageContext({ createStorage: () => storage })
   contexts.push(context)
-  return context
+  return { context, storage }
 }
 
 function mountPanel(context: StorageContext): void {
@@ -72,14 +78,15 @@ afterEach(() => {
 
 describe('backup nudge (FlyStoppedPanel)', () => {
   it('nudges when a session was never followed by an export', async () => {
-    mountPanel(await seededContext({ speechEnabled: true }))
+    const { context } = await seededContext({ speechEnabled: true })
+    mountPanel(context)
 
     await waitForText(NUDGE_TEXT)
     expect(text()).toContain('Export now')
   })
 
   it('stays quiet right after a fresh export', async () => {
-    const context = await seededContext({
+    const { context } = await seededContext({
       speechEnabled: true,
       lastExportAt: new Date().toISOString(),
     })
@@ -91,7 +98,7 @@ describe('backup nudge (FlyStoppedPanel)', () => {
   })
 
   it('Export now delivers, records lastExportAt, and retracts the nudge', async () => {
-    const context = await seededContext({ speechEnabled: true })
+    const { context, storage } = await seededContext({ speechEnabled: true })
     mountPanel(context)
     await waitForText('Export now')
 
@@ -103,7 +110,7 @@ describe('backup nudge (FlyStoppedPanel)', () => {
 
     await waitForText('Exported chronowhoop-export-')
     await vi.waitFor(async () => {
-      const { settings } = await context.storage.loadCourses()
+      const { settings } = await storage.loadCourses()
       expect(settings.lastExportAt).toBeDefined()
     })
     await vi.waitFor(() => expect(text()).not.toContain(NUDGE_TEXT))

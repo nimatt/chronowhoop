@@ -3,6 +3,7 @@ import type { OpfsDirectoryLike, OpfsFileHandleLike, OpfsStorageLike, OpfsWritab
 import {
   COURSES_FILE,
   OpfsStorage,
+  RESURRECTION_REMOVAL_ATTEMPTS,
   SESSIONS_DIR,
   type LocksLike,
   type OpfsStorageOptions,
@@ -15,7 +16,7 @@ import {
   isUnsupportedVersionError,
   isWriteFailedError,
 } from './storage'
-import { describeStorageContract, makeSession } from './storage-contract'
+import { describeStorageContract, makeCourse, makeSession } from './storage-contract'
 
 function notFoundError(name: string): Error {
   return Object.assign(new Error(`entry "${name}" not found`), { name: 'NotFoundError' })
@@ -23,11 +24,15 @@ function notFoundError(name: string): Error {
 
 interface FakeOpfsHooks {
   // Called with the file's full path just before a writable commits on
-  // close(); throw to make that write fail.
-  beforeCommit?: (path: string) => void
+  // close(); throw to make that write fail. May be async — close() awaits it,
+  // which lets a test run a whole delete *inside* another write's commit.
+  beforeCommit?: (path: string) => void | Promise<void>
   // Called with the file's full path when getFile() is requested; throw to
   // make that read fail like a transient infrastructure error.
   beforeRead?: (path: string) => void
+  // Called with the entry's full path before removeEntry(); throw to make the
+  // removal fail.
+  beforeRemove?: (path: string) => void
 }
 
 class FakeDirectory implements OpfsDirectoryLike {
@@ -53,10 +58,9 @@ class FakeDirectory implements OpfsDirectoryLike {
             buffer += data
             return Promise.resolve()
           },
-          close: () => {
-            this.hooks.beforeCommit?.(fullPath)
+          close: async () => {
+            await this.hooks.beforeCommit?.(fullPath)
             this.files.set(name, buffer)
-            return Promise.resolve()
           },
           abort: () => Promise.resolve(),
         }
@@ -88,6 +92,11 @@ class FakeDirectory implements OpfsDirectoryLike {
   }
 
   removeEntry(name: string): Promise<void> {
+    try {
+      this.hooks.beforeRemove?.(`${this.path}${name}`)
+    } catch (error) {
+      return Promise.reject(error as Error)
+    }
     if (this.files.delete(name) || this.directories.delete(name)) return Promise.resolve()
     return Promise.reject(notFoundError(name))
   }
@@ -578,6 +587,461 @@ describe('OpfsStorage persistence request', () => {
   it('persistenceStatus is false when the StorageManager API is unavailable', async () => {
     const { storage } = makeRig({ storage: {} })
     expect(await storage.persistenceStatus()).toEqual({ persisted: false })
+  })
+})
+
+describe('OpfsStorage deletion', () => {
+  const sessionFile = (id: string) => `${id}.json`
+
+  it('deleteSession removes the file; an unknown id and an empty store both resolve', async () => {
+    const { storage, root } = makeRig()
+    const session = makeSession()
+    await storage.saveSession(session)
+
+    await storage.deleteSession(session.id)
+    expect(root.sessions().files.has(sessionFile(session.id))).toBe(false)
+
+    // Idempotent: the double-tap and the retry after a partial cascade.
+    await expect(storage.deleteSession(session.id)).resolves.toBeUndefined()
+    await expect(makeRig().storage.deleteSession('never-existed')).resolves.toBeUndefined()
+  })
+
+  it('the guard rejects a later saveSession for a deleted session, leaving nothing on disk', async () => {
+    const { storage, root } = makeRig()
+    const session = makeSession()
+    await storage.saveSession(session)
+    await storage.deleteSession(session.id)
+
+    const error = await storage.saveSession(session).then(
+      () => undefined,
+      (e: unknown) => e,
+    )
+    expect(isNotFoundError(error)).toBe(true)
+    expect(root.sessions().files.has(sessionFile(session.id))).toBe(false)
+  })
+
+  it('deleteCourse cascades to its sessions, clears the marker and lastCourseId, and spares other courses', async () => {
+    const { storage, root } = makeRig()
+    const doomed = makeCourse()
+    const kept = makeCourse()
+    const doomedSession = makeSession({ courseId: doomed.id })
+    const keptSession = makeSession({ courseId: kept.id })
+    await storage.saveCourses({
+      courses: [doomed, kept],
+      settings: { speechEnabled: true, lastCourseId: doomed.id },
+    })
+    await storage.saveSession(doomedSession)
+    await storage.saveSession(keptSession)
+
+    expect(await storage.deleteCourse(doomed.id)).toEqual({ sessionsDeleted: 1 })
+
+    const after = await storage.loadCourses()
+    expect(after.courses).toEqual([kept])
+    expect(after.settings).toEqual({ speechEnabled: true })
+    expect(root.sessions().files.has(sessionFile(doomedSession.id))).toBe(false)
+    expect(root.sessions().files.has(sessionFile(keptSession.id))).toBe(true)
+  })
+
+  it('the guard rejects a saveSession for a deleted course, even for a session that was never on disk', async () => {
+    const { storage, root } = makeRig()
+    const course = makeCourse()
+    await storage.saveCourses({ courses: [course], settings: { speechEnabled: true } })
+    await storage.deleteCourse(course.id)
+
+    // Armed moments before the delete: its first write never reached disk, so
+    // the cascade's listSessions() snapshot never saw it. { create: true }
+    // would resurrect it as a session whose course is gone.
+    const unborn = makeSession({ courseId: course.id })
+    const error = await storage.saveSession(unborn).then(
+      () => undefined,
+      (e: unknown) => e,
+    )
+    expect(isNotFoundError(error)).toBe(true)
+    expect(root.sessions().files.has(sessionFile(unborn.id))).toBe(false)
+  })
+
+  it('compensates a save whose write commits while the delete is in flight', async () => {
+    const session = makeSession()
+    const rig: { storage?: OpfsStorage } = {}
+    const harness = makeRig({
+      hooks: {
+        beforeCommit: async (path) => {
+          // The delete runs to completion INSIDE the save's commit: the save
+          // has already passed its pre-check, and close() re-creates the file
+          // the delete just removed.
+          if (path === `${SESSIONS_DIR}/${sessionFile(session.id)}`) {
+            await rig.storage?.deleteSession(session.id)
+          }
+        },
+      },
+    })
+    rig.storage = harness.storage
+
+    const error = await harness.storage.saveSession(session).then(
+      () => undefined,
+      (e: unknown) => e,
+    )
+    expect(isNotFoundError(error)).toBe(true)
+    expect(harness.root.sessions().files.has(sessionFile(session.id))).toBe(false)
+  })
+
+  it('raises rather than swallows a compensating removal that fails: the file may now outlive its course', async () => {
+    const session = makeSession()
+    const rig: { storage?: OpfsStorage } = {}
+    const path = `${SESSIONS_DIR}/${sessionFile(session.id)}`
+    let removals = 0
+    const harness = makeRig({
+      hooks: {
+        beforeCommit: async (commitPath) => {
+          if (commitPath === path) await rig.storage?.deleteSession(session.id)
+        },
+        // The delete's own removal succeeds (removal 1); every later one — the
+        // compensating removals of the file the save just re-created — fails.
+        beforeRemove: (removePath) => {
+          if (removePath !== path) return
+          removals++
+          if (removals > 1) throw new Error('backend exploded')
+        },
+      },
+    })
+    rig.storage = harness.storage
+
+    const error = await harness.storage.saveSession(session).then(
+      () => undefined,
+      (e: unknown) => e,
+    )
+
+    // The old `.catch(() => {})` here swallowed it: saveSession rejected
+    // 'not-found', the persister gave up, and the file it had just re-created
+    // stayed on disk — invisible (nothing lists a session whose course is
+    // gone), unattributable (the guard that knows it should be gone dies with
+    // the page), and riding out in every future export as "Unknown course".
+    expect(isWriteFailedError(error)).toBe(true)
+    expect((error as Error).message).toContain('outlive its course')
+    // Retried before giving up — an OPFS removal can fail transiently, and this
+    // one is the last line of defence.
+    expect(removals).toBe(1 + RESURRECTION_REMOVAL_ATTEMPTS)
+    expect(harness.quarantines).toEqual([])
+  })
+
+  it('a FAILED deleteSession un-records the id, so the session stays saveable', async () => {
+    let removalsFail = true
+    const session = makeSession()
+    const { storage, root } = makeRig({
+      hooks: {
+        beforeRemove: (path) => {
+          if (removalsFail && path === `${SESSIONS_DIR}/${sessionFile(session.id)}`) {
+            throw new Error('backend exploded')
+          }
+        },
+      },
+    })
+    await storage.saveSession(session)
+
+    const error = await storage.deleteSession(session.id).then(
+      () => undefined,
+      (e: unknown) => e,
+    )
+    expect(isWriteFailedError(error)).toBe(true)
+    expect(root.sessions().files.has(sessionFile(session.id))).toBe(true)
+
+    // The session still exists: poisoning it would silently stop the live
+    // persister from saving laps the pilot is still flying.
+    await expect(storage.saveSession(session)).resolves.toBeUndefined()
+    removalsFail = false
+    await expect(storage.deleteSession(session.id)).resolves.toBeUndefined()
+  })
+
+  // The post-write compensation is the DESTRUCTIVE half of the guard, and it is
+  // keyed on destructions that actually happened — this session id was
+  // deleteSession'd, or this course's cascade reached its COMMIT. A course that
+  // is merely CONDEMNED must not authorise it: the cascade below dies on its
+  // INTENT write having destroyed nothing at all, and the write it raced is a
+  // live persister's. Compensate for a condemned-but-uncommitted course and a
+  // delete that did nothing has erased the pilot's laps.
+  it('does not compensate a write that raced a cascade which then FAILED before destroying anything', async () => {
+    const course = makeCourse()
+    const inFlight = makeSession({ courseId: course.id, note: 'lap 4' })
+    const sessionPath = `${SESSIONS_DIR}/${sessionFile(inFlight.id)}`
+    const rig: { save?: Promise<unknown> } = {}
+    let armed = false
+    let releaseSessionWrite = (): void => {}
+    const sessionWriteGate = new Promise<void>((resolve) => {
+      releaseSessionWrite = resolve
+    })
+
+    const { storage, root } = makeRig({
+      hooks: {
+        beforeCommit: async (path) => {
+          if (!armed) return
+          // The persister's write parks INSIDE writeTextFile, having already
+          // passed its pre-check — the course was not condemned when it started.
+          if (path === sessionPath) return sessionWriteGate
+          if (path !== COURSES_FILE) return
+          // The cascade has read, condemned, and is now making its INTENT write.
+          // Let the parked write commit and run its post-write check HERE, while
+          // the course is condemned but nothing has been destroyed…
+          releaseSessionWrite()
+          await rig.save
+          // …and then fail the INTENT write, so the cascade destroys nothing.
+          throw Object.assign(new Error('no room'), { name: 'QuotaExceededError' })
+        },
+      },
+    })
+    await storage.saveCourses({ courses: [course], settings: { speechEnabled: true } })
+    await storage.saveSession(inFlight)
+
+    armed = true
+    rig.save = storage.saveSession({ ...inFlight, note: 'lap 5' }).then(
+      () => undefined,
+      (e: unknown) => e,
+    )
+    const deleteError = await storage.deleteCourse(course.id).then(
+      () => undefined,
+      (e: unknown) => e,
+    )
+
+    expect(isQuotaExceededError(deleteError)).toBe(true)
+    // The write landed and KEPT ITS BYTES: the cascade never committed, so it
+    // had no authority to take them back.
+    expect(await rig.save).toBeUndefined()
+    expect(root.sessions().files.has(sessionFile(inFlight.id))).toBe(true)
+    expect((await storage.loadSession(inFlight.id)).note).toBe('lap 5')
+    // …and the course is flyable again.
+    await expect(storage.saveSession({ ...inFlight, note: 'lap 6' })).resolves.toBeUndefined()
+  })
+
+  it('a FAILED deleteCourse un-records the course, so its sessions stay saveable', async () => {
+    const course = makeCourse()
+    const { storage } = makeRig({
+      hooks: {
+        beforeCommit: (path) => {
+          if (path === COURSES_FILE) throw new Error('backend exploded')
+        },
+      },
+    })
+    const error = await storage.deleteCourse(course.id).then(
+      () => undefined,
+      (e: unknown) => e,
+    )
+    expect(isWriteFailedError(error)).toBe(true)
+
+    // The cascade never committed, so the course is still standing and can
+    // still be flown.
+    await expect(
+      storage.saveSession(makeSession({ courseId: course.id })),
+    ).resolves.toBeUndefined()
+  })
+
+  it('importAll re-admits both id sets: a pre-delete export restores what was deleted', async () => {
+    const { storage, root } = makeRig()
+    const course = makeCourse()
+    const session = makeSession({ courseId: course.id })
+    const otherSession = makeSession()
+    await storage.saveCourses({ courses: [course], settings: { speechEnabled: true } })
+    await storage.saveSession(session)
+    await storage.saveSession(otherSession)
+
+    const backup = await storage.exportAll()
+    await storage.deleteCourse(course.id)
+    await storage.deleteSession(otherSession.id)
+
+    expect(await storage.importAll(backup)).toEqual({
+      coursesAdded: 1,
+      coursesSkipped: 0,
+      sessionsAdded: 2,
+      sessionsSkipped: 0,
+    })
+    expect((await storage.loadCourses()).courses).toEqual([course])
+    expect(root.sessions().files.has(sessionFile(session.id))).toBe(true)
+    expect(root.sessions().files.has(sessionFile(otherSession.id))).toBe(true)
+
+    // Re-admitted for good: the restored sessions are writable again.
+    await expect(storage.saveSession(session)).resolves.toBeUndefined()
+    await expect(storage.saveSession(otherSession)).resolves.toBeUndefined()
+  })
+
+  it('resumePendingDeletions finishes an interrupted cascade and never rejects', async () => {
+    const { storage, root } = makeRig()
+    const course = makeCourse()
+    const session = makeSession({ courseId: course.id })
+    await storage.saveSession(session)
+    // The crash state: INTENT written (course still present, marker recorded),
+    // session files not yet removed.
+    await storage.saveCourses({
+      courses: [course],
+      settings: {
+        speechEnabled: true,
+        pendingCourseDeletions: [
+          { courseId: course.id, courseName: course.name, sessionIds: [session.id] },
+        ],
+      },
+    })
+
+    expect(await storage.resumePendingDeletions()).toEqual([
+      { kind: 'completed', courseId: course.id, courseName: course.name, sessionsDeleted: 1 },
+    ])
+    const after = await storage.loadCourses()
+    expect(after.courses).toEqual([])
+    expect(after.settings.pendingCourseDeletions).toBeUndefined()
+    expect(root.sessions().files.has(sessionFile(session.id))).toBe(false)
+  })
+
+  it('a completed resume leaves the course guarded: a session armed for it after the commit cannot land', async () => {
+    const { storage, root } = makeRig()
+    const course = makeCourse()
+    const session = makeSession({ courseId: course.id })
+    await storage.saveSession(session)
+    await storage.saveCourses({
+      courses: [course],
+      settings: {
+        speechEnabled: true,
+        pendingCourseDeletions: [
+          { courseId: course.id, courseName: course.name, sessionIds: [session.id] },
+        ],
+      },
+    })
+
+    await storage.resumePendingDeletions()
+
+    // The resume ends in the same COMMIT as deleteCourse and leaves the course
+    // guarded the same way: it is gone from courses.json, so a straggling
+    // persister write for it would create a session file whose course does not
+    // exist — the forbidden state. (A session armed while the resume was still
+    // SCANNING is a different matter entirely: it lands, and it ABANDONS the
+    // deletion — see the contract suite. Refusing it there is what inverted this
+    // guard into a data-loss bug.)
+    const armedAfterTheCommit = makeSession({ courseId: course.id })
+    const error = await storage.saveSession(armedAfterTheCommit).then(
+      () => undefined,
+      (e: unknown) => e,
+    )
+    expect(isNotFoundError(error)).toBe(true)
+    expect(root.sessions().files.has(sessionFile(armedAfterTheCommit.id))).toBe(false)
+  })
+
+  it('an ABANDONED resume releases the course again, so it can still be flown', async () => {
+    const { storage } = makeRig()
+    const course = makeCourse()
+    const confirmed = makeSession({ courseId: course.id, startedAt: '2026-07-12T10:00:00.000Z' })
+    const flownSince = makeSession({ courseId: course.id, startedAt: '2026-07-13T10:00:00.000Z' })
+    await storage.saveSession(confirmed)
+    await storage.saveSession(flownSince)
+    await storage.saveCourses({
+      courses: [course],
+      settings: {
+        speechEnabled: true,
+        pendingCourseDeletions: [
+          { courseId: course.id, courseName: course.name, sessionIds: [confirmed.id] },
+        ],
+      },
+    })
+
+    expect(await storage.resumePendingDeletions()).toEqual([
+      { kind: 'abandoned', courseId: course.id, courseName: course.name, reason: 'flown-since' },
+    ])
+
+    // The course survived the abandonment — leaving it condemned would make
+    // every session flown on it reject not-found for the life of the tab.
+    await expect(
+      storage.saveSession(makeSession({ courseId: course.id })),
+    ).resolves.toBeUndefined()
+  })
+
+  it('resumePendingDeletions resolves [] rather than rejecting when courses.json cannot be read', async () => {
+    const { storage, root } = makeRig()
+    root.files.set(COURSES_FILE, '{"schemaVersion":2,"courses":"shaped-differently"}')
+    expect(await storage.resumePendingDeletions()).toEqual([])
+  })
+
+  it('a read-only instance rejects both deletes and resumes nothing', async () => {
+    const locks = new FakeLockManager()
+    const writer = makeRig({ locks }).storage
+    await writer.saveCourses({ courses: [], settings: { speechEnabled: true } })
+
+    const reader = makeRig({ locks }).storage
+    const sessionError = await reader.deleteSession('any').then(
+      () => undefined,
+      (e: unknown) => e,
+    )
+    const courseError = await reader.deleteCourse('any').then(
+      () => undefined,
+      (e: unknown) => e,
+    )
+    expect(isWriteFailedError(sessionError)).toBe(true)
+    expect(isWriteFailedError(courseError)).toBe(true)
+    expect((sessionError as Error).message).toContain('read-only')
+    expect(await reader.resumePendingDeletions()).toEqual([])
+  })
+})
+
+describe('OpfsStorage export integrity', () => {
+  // A session file removed between the directory listing and its read — a
+  // cascade running concurrently, or another tab. readDocument reports that as
+  // status 'not-found' rather than throwing, which strict mode used to drop in
+  // silence: a truncated backup, stamped lastExportAt, exactly where the
+  // delete screen offers "Export backup first" as the only undo.
+  function makeVanishingRig(first: string, vanishing: string) {
+    const holder: { root?: FakeDirectory } = {}
+    const rig = makeRig({
+      hooks: {
+        beforeRead: (path) => {
+          if (path !== `${SESSIONS_DIR}/${first}`) return
+          holder.root?.sessions().files.delete(vanishing)
+        },
+      },
+    })
+    holder.root = rig.root
+    return rig
+  }
+
+  it('exportAll rejects when a listed session file vanishes mid-scan', async () => {
+    const first = makeSession()
+    const vanishing = makeSession()
+    const rig = makeVanishingRig(`${first.id}.json`, `${vanishing.id}.json`)
+    await rig.storage.saveSession(first)
+    await rig.storage.saveSession(vanishing)
+
+    const error = await rig.storage.exportAll().then(
+      () => undefined,
+      (e: unknown) => e,
+    )
+    expect(isCorruptError(error)).toBe(true)
+    expect((error as Error).message).toContain('disappeared during the scan')
+    expect(rig.quarantines).toEqual([])
+  })
+
+  it('listSessions still skips it: availability over completeness', async () => {
+    const first = makeSession()
+    const vanishing = makeSession()
+    const rig = makeVanishingRig(`${first.id}.json`, `${vanishing.id}.json`)
+    await rig.storage.saveSession(first)
+    await rig.storage.saveSession(vanishing)
+
+    const summaries = await rig.storage.listSessions()
+    expect(summaries.map((s) => s.id)).toEqual([first.id])
+    expect(rig.quarantines).toEqual([])
+  })
+})
+
+describe('OpfsStorage export contents', () => {
+  it('strips the pending-deletion marker from the exported settings', async () => {
+    const { storage } = makeRig()
+    const course = makeCourse()
+    await storage.saveCourses({
+      courses: [course],
+      settings: {
+        speechEnabled: false,
+        pendingCourseDeletions: [
+          { courseId: course.id, courseName: course.name, sessionIds: [] },
+        ],
+      },
+    })
+
+    // The export is the backup a pilot inspects and restores from; the marker
+    // is this store's in-flight bookkeeping, and has no business in it.
+    expect((await storage.exportAll()).settings).toEqual({ speechEnabled: false })
+    expect((await storage.loadCourses()).settings.pendingCourseDeletions).toHaveLength(1)
   })
 })
 

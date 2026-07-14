@@ -38,7 +38,7 @@
   // svelte-ignore state_referenced_locally
   const session = createFlySession({
     course,
-    storage: context.storage,
+    storage: context.sessionWriter,
     ...(initialDetectionConfig !== undefined ? { initialDetectionConfig } : {}),
     ...(initialNote !== undefined ? { initialNote } : {}),
     ...(mediaDevices !== undefined ? { mediaDevices } : {}),
@@ -56,17 +56,13 @@
   // Read-only gating (a second tab must not record a session that can never
   // save). context.readOnly is a mirror that only refreshes after repository
   // operations, and the underlying Web Locks answer settles — and can flip —
-  // asynchronously after load, so the flow polls the live answer off the
-  // storage instance (OpfsStorage exposes it; storages without the concept
-  // fall back to the context's answer) and re-derives it at arm time.
-  function liveReadOnly(): boolean {
-    const live = (context.storage as { readOnly?: unknown }).readOnly
-    return typeof live === 'boolean' ? live : context.readOnly
-  }
-  let readOnly = $state(liveReadOnly())
+  // asynchronously after load, so the flow polls context.liveReadOnly(), which
+  // reads the storage instance at call time, and re-derives it at arm time.
+  // svelte-ignore state_referenced_locally
+  let readOnly = $state(context.liveReadOnly())
   $effect(() => {
     const timer = setInterval(() => {
-      readOnly = liveReadOnly()
+      readOnly = context.liveReadOnly()
     }, 500)
     return () => clearInterval(timer)
   })
@@ -84,7 +80,7 @@
   function arm(): void {
     // The lock answer settles async, so the polled value may be stale for up
     // to one tick — re-derive at the moment of truth.
-    readOnly = liveReadOnly()
+    readOnly = context.liveReadOnly()
     if (readOnly) return
     session.arm()
   }

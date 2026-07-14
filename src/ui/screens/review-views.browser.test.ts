@@ -35,10 +35,14 @@ function mountApp(storage: MemoryStorage) {
   })
 }
 
-function linkByText(label: string): HTMLAnchorElement {
-  const link = Array.from(container.querySelectorAll('a')).find(
+function maybeLinkByText(label: string): HTMLAnchorElement | undefined {
+  return Array.from(container.querySelectorAll('a')).find(
     (candidate) => candidate.textContent?.trim() === label,
   )
+}
+
+function linkByText(label: string): HTMLAnchorElement {
+  const link = maybeLinkByText(label)
   if (!link) throw new Error(`no link labelled ${JSON.stringify(label)}`)
   return link
 }
@@ -51,8 +55,7 @@ function buttonByText(label: string): HTMLButtonElement {
   return button
 }
 
-async function seededStorage() {
-  const storage = new MemoryStorage()
+async function seededStorage(storage: MemoryStorage = new MemoryStorage()) {
   const course = makeCourse({ id: 'c-1', name: 'Garage loop', direction: 'ltr', minLapTimeMs: 3000 })
   await storage.saveCourses({ courses: [course], settings: { speechEnabled: true } })
 
@@ -250,10 +253,34 @@ describe('session view (App + MemoryStorage)', () => {
     await vi.waitFor(() => expect(text()).not.toContain('Save note'))
   })
 
+  it('offers Delete session on a loaded session, linking to the confirm route', async () => {
+    mountApp(await seededStorage())
+    location.hash = '#/session/s-new'
+    await waitForText('Garage loop')
+
+    await vi.waitFor(() =>
+      expect(linkByText('Delete session').getAttribute('href')).toBe('#/session/s-new/delete'),
+    )
+  })
+
+  it('offers no delete link in a read-only tab', async () => {
+    class ReadOnlyMemoryStorage extends MemoryStorage {
+      readonly readOnly = true
+    }
+    mountApp(await seededStorage(new ReadOnlyMemoryStorage()))
+    location.hash = '#/session/s-new'
+    await waitForText('Garage loop')
+
+    await vi.waitFor(() => expect(buttonByText('Delete session').disabled).toBe(true))
+    expect(maybeLinkByText('Delete session')).toBeUndefined()
+  })
+
   it('handles an unknown (or quarantined) session id gracefully', async () => {
     mountApp(await seededStorage())
     location.hash = '#/session/never-existed'
     await waitForText('This session does not exist')
     linkByText('Back to courses')
+    // The not-found branch offers nothing to delete.
+    expect(text()).not.toContain('Delete session')
   })
 })

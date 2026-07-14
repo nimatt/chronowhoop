@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'vitest'
 import type { Course, Session } from '../domain/types'
-import { buildExportFilename, exportAllToBlob } from './export'
+import { buildExportFilename, exportEnvelopeToBlob } from './export'
 import { MemoryStorage } from './memory-storage'
 import { parseExportEnvelope } from './schema'
 
@@ -62,20 +62,29 @@ async function seededStorage(): Promise<MemoryStorage> {
 
 describe('buildExportFilename', () => {
   // Local-time components, so the expectations are timezone-independent.
-  test('formats as chronowhoop-export-YYYYMMDD-HHMM.json with zero padding', () => {
-    expect(buildExportFilename(new Date(2026, 6, 3, 9, 5))).toBe(
-      'chronowhoop-export-20260703-0905.json',
+  test('formats as chronowhoop-export-YYYYMMDD-HHMMSS.json with zero padding', () => {
+    expect(buildExportFilename(new Date(2026, 6, 3, 9, 5, 7))).toBe(
+      'chronowhoop-export-20260703-090507.json',
     )
-    expect(buildExportFilename(new Date(2026, 11, 31, 23, 59))).toBe(
-      'chronowhoop-export-20261231-2359.json',
+    expect(buildExportFilename(new Date(2026, 11, 31, 23, 59, 59))).toBe(
+      'chronowhoop-export-20261231-235959.json',
+    )
+  })
+
+  // Two exports in the same minute — the export → delete → export rhythm this
+  // feature encourages — must not produce the same name: an overwriting share
+  // target would replace the pre-delete backup with a post-delete snapshot.
+  test('distinguishes two exports within the same minute', () => {
+    expect(buildExportFilename(new Date(2026, 6, 3, 9, 5, 12))).not.toBe(
+      buildExportFilename(new Date(2026, 6, 3, 9, 5, 48)),
     )
   })
 })
 
-describe('exportAllToBlob', () => {
+describe('exportEnvelopeToBlob', () => {
   test('assembles a pretty-printed JSON blob that round-trips through the envelope validator', async () => {
     const storage = await seededStorage()
-    const { blob, filename, exportedAt } = await exportAllToBlob(storage)
+    const { blob, filename, exportedAt } = exportEnvelopeToBlob(await storage.exportAll())
 
     expect(blob.type).toBe('application/json')
     expect(filename).toBe(buildExportFilename(new Date(EXPORTED_AT)))
@@ -97,7 +106,7 @@ describe('exportAllToBlob', () => {
   // CoursesRepo, after delivery); this module is pure assembly.
   test('does not write anything — settings are untouched after assembly', async () => {
     const storage = await seededStorage()
-    await exportAllToBlob(storage)
+    exportEnvelopeToBlob(await storage.exportAll())
 
     const { settings } = await storage.loadCourses()
     expect(settings).toEqual({ speechEnabled: false, lastCourseId: 'course-1' })

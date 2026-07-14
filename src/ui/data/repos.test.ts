@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { MemoryStorage } from '../../core/storage/memory-storage'
 import { makeCourse, makeSession } from '../../core/storage/storage-contract'
 import { StorageError, type Storage } from '../../core/storage/storage'
-import { CoursesRepo, SessionsRepo } from './repos'
+import { CoursesRepo, SessionsRepo, type SettingsPatch } from './repos'
 
 function failingStorage(error: unknown): Storage {
   const reject = () => Promise.reject(error)
@@ -16,10 +16,32 @@ function failingStorage(error: unknown): Storage {
     exportAll: reject,
     importAll: reject,
     persistenceStatus: reject,
+    deleteSession: reject,
+    deleteCourse: reject,
+    resumePendingDeletions: reject,
   }
 }
 
 describe('CoursesRepo', () => {
+  // A cascade interrupted between its INTENT and COMMIT writes: course "a" is
+  // still present, its session s-a is still on disk, and the marker names both.
+  // Course "b" and its session are bystanders.
+  async function seededPendingDeletion() {
+    const storage = new MemoryStorage()
+    const doomed = makeCourse({ id: 'a', name: 'A' })
+    const other = makeCourse({ id: 'b', name: 'B' })
+    await storage.saveCourses({
+      courses: [doomed, other],
+      settings: {
+        speechEnabled: true,
+        pendingCourseDeletions: [{ courseId: 'a', courseName: 'A', sessionIds: ['s-a'] }],
+      },
+    })
+    await storage.saveSession(makeSession({ id: 's-a', courseId: 'a' }))
+    await storage.saveSession(makeSession({ id: 's-b', courseId: 'b' }))
+    return { storage, marked: { doomed, other } }
+  }
+
   it('ensureLoaded loads courses and settings once, sharing concurrent calls', async () => {
     const storage = new MemoryStorage()
     const course = makeCourse()
@@ -103,6 +125,18 @@ describe('CoursesRepo', () => {
     expect(await repo.updateSettings({ speechEnabled: false, lastCourseId: undefined })).toBe(true)
     expect(repo.settings).toEqual({ speechEnabled: false })
     expect((await storage.loadCourses()).settings).toEqual({ speechEnabled: false })
+  })
+
+  it('does not open the settings door to the crash-recovery journal', () => {
+    const patch: SettingsPatch = { speechEnabled: false, lastCourseId: 'c-1' }
+    expect(patch.lastCourseId).toBe('c-1')
+
+    // pendingCourseDeletions is the cascade's two-phase-commit work list (plan 09
+    // item 1), not a user setting: a screen must not be able to forge one, nor
+    // clear a live one whose sessions are already destroyed.
+    // @ts-expect-error — not part of SettingsPatch.
+    const forged: SettingsPatch = { pendingCourseDeletions: [] }
+    expect(forged).toEqual({ pendingCourseDeletions: [] })
   })
 
   it('serializes concurrent writes: neither of two updateSettings is lost', async () => {
@@ -191,6 +225,365 @@ describe('CoursesRepo', () => {
     const repo = new CoursesRepo(failingStorage(new Error('boom')))
     await repo.ensureLoaded()
     expect(repo.lastError).toEqual({ kind: 'unknown', message: 'boom' })
+  })
+
+  it('deleteCourse removes the course from the snapshot and from storage', async () => {
+    const storage = new MemoryStorage()
+    const a = makeCourse({ id: 'a', name: 'A' })
+    const b = makeCourse({ id: 'b', name: 'B' })
+    await storage.saveCourses({
+      courses: [a, b],
+      settings: { speechEnabled: true, lastCourseId: 'a' },
+    })
+    await storage.saveSession(makeSession({ id: 's-a', courseId: 'a' }))
+    await storage.saveSession(makeSession({ id: 's-b', courseId: 'b' }))
+
+    const repo = new CoursesRepo(storage)
+    await repo.ensureLoaded()
+
+    await expect(repo.deleteCourse('a')).resolves.toBe(true)
+    expect(repo.courses).toEqual([b])
+    expect(repo.settings).toEqual({ speechEnabled: true })
+    expect(repo.lastError).toBeNull()
+
+    const data = await storage.loadCourses()
+    expect(data.courses).toEqual([b])
+    expect((await storage.listSessions()).map((each) => each.id)).toEqual(['s-b'])
+  })
+
+  it('a failed deleteCourse resolves false, sets lastError, and still reloads', async () => {
+    const storage = new MemoryStorage()
+    const course = makeCourse({ id: 'a', name: 'A' })
+    await storage.saveCourses({ courses: [course], settings: { speechEnabled: true } })
+    await storage.saveSession(makeSession({ id: 's-a', courseId: 'a' }))
+
+    const repo = new CoursesRepo(storage)
+    await repo.ensureLoaded()
+
+    // A cascade that dies AFTER its INTENT write: courses.json is already
+    // rewritten (marker added) and the session file is already gone. Reloading
+    // only on success would leave the repo holding a snapshot that predates
+    // both — and the next updateSettings would write it back.
+    vi.spyOn(storage, 'deleteCourse').mockImplementation(async (id) => {
+      const data = await storage.loadCourses()
+      await storage.saveCourses({
+        courses: data.courses,
+        settings: {
+          ...data.settings,
+          pendingCourseDeletions: [{ courseId: id, courseName: 'A', sessionIds: ['s-a'] }],
+        },
+      })
+      await storage.deleteSession('s-a')
+      throw new StorageError('write-failed', 'disk')
+    })
+
+    await expect(repo.deleteCourse('a')).resolves.toBe(false)
+    expect(repo.lastError).toEqual({ kind: 'write-failed', message: 'disk' })
+    expect(repo.courses).toEqual([course])
+    expect(repo.settings.pendingCourseDeletions).toEqual([
+      { courseId: 'a', courseName: 'A', sessionIds: ['s-a'] },
+    ])
+
+    // The marker survives the next settings write, so the next launch's resume
+    // can still finish the cascade.
+    await expect(repo.updateSettings({ speechEnabled: false })).resolves.toBe(true)
+    expect((await storage.loadCourses()).settings.pendingCourseDeletions).toEqual([
+      { courseId: 'a', courseName: 'A', sessionIds: ['s-a'] },
+    ])
+  })
+
+  it('a deleted course is not resurrected by a later fire-and-forget updateSettings', async () => {
+    const storage = new MemoryStorage()
+    const a = makeCourse({ id: 'a', name: 'A' })
+    const b = makeCourse({ id: 'b', name: 'B' })
+    await storage.saveCourses({ courses: [a, b], settings: { speechEnabled: true } })
+
+    const repo = new CoursesRepo(storage)
+    await repo.ensureLoaded()
+    await expect(repo.deleteCourse('a')).resolves.toBe(true)
+
+    // The field bug, and it needs no race: FlyFlow arms a flight and writes
+    // lastCourseId. Without deleteCourse's reload this persists the stale
+    // course list and brings "A" back — empty, its sessions destroyed.
+    await expect(repo.updateSettings({ lastCourseId: 'b' })).resolves.toBe(true)
+
+    const data = await storage.loadCourses()
+    expect(data.courses).toEqual([b])
+    expect(data.settings).toEqual({ speechEnabled: true, lastCourseId: 'b' })
+  })
+
+  it('a reload that fails after the cascade committed invalidates the snapshot', async () => {
+    const storage = new MemoryStorage()
+    const a = makeCourse({ id: 'a', name: 'A' })
+    const b = makeCourse({ id: 'b', name: 'B' })
+    await storage.saveCourses({ courses: [a, b], settings: { speechEnabled: true } })
+    await storage.saveSession(makeSession({ id: 's-a', courseId: 'a' }))
+
+    const repo = new CoursesRepo(storage)
+    await repo.ensureLoaded()
+
+    // The cascade commits; only the repo's own post-delete read fails (OPFS maps
+    // any read exception to 'corrupt'). Preserving the pre-delete snapshot with
+    // loaded still true would resurrect "a" on the next settings write — and
+    // erase the intent marker in the same breath, with its sessions already gone.
+    const loadCourses = storage.loadCourses.bind(storage)
+    let loadsFail = false
+    vi.spyOn(storage, 'loadCourses').mockImplementation(async () => {
+      if (loadsFail) throw new StorageError('corrupt', 'unreadable')
+      return loadCourses()
+    })
+    const deleteCourse = storage.deleteCourse.bind(storage)
+    vi.spyOn(storage, 'deleteCourse').mockImplementation(async (id) => {
+      const result = await deleteCourse(id)
+      loadsFail = true
+      return result
+    })
+
+    await expect(repo.deleteCourse('a')).resolves.toBe(true)
+    expect(repo.loaded).toBe(false)
+    expect(repo.lastError).toEqual({ kind: 'corrupt', message: 'unreadable' })
+
+    // The write door is shut while the snapshot is unknown, so the stale list
+    // cannot be written back.
+    await expect(repo.updateSettings({ lastCourseId: 'b' })).resolves.toBe(false)
+
+    loadsFail = false
+    await repo.ensureLoaded()
+    expect(repo.loaded).toBe(true)
+    expect(repo.courses).toEqual([b])
+    expect(repo.lastError).toBeNull()
+
+    await expect(repo.updateSettings({ lastCourseId: 'b' })).resolves.toBe(true)
+    const data = await storage.loadCourses()
+    expect(data.courses).toEqual([b])
+    expect(await storage.listSessions()).toEqual([])
+  })
+
+  it('discards a load a committed write overtook: the deleted course is not re-instated', async () => {
+    const storage = new MemoryStorage()
+    const a = makeCourse({ id: 'a', name: 'A' })
+    const b = makeCourse({ id: 'b', name: 'B' })
+    await storage.saveCourses({ courses: [a, b], settings: { speechEnabled: true } })
+
+    const repo = new CoursesRepo(storage)
+    await repo.ensureLoaded()
+
+    // reload() is outside the write queue (queuing it would deadlock), so a read
+    // that started before the delete can still land after it. This one reads the
+    // pre-delete document and is held open until the cascade has committed.
+    const loadCourses = storage.loadCourses.bind(storage)
+    let releaseLoad = () => {}
+    const held = new Promise<void>((resolve) => {
+      releaseLoad = resolve
+    })
+    vi.spyOn(storage, 'loadCourses').mockImplementationOnce(async () => {
+      const data = await loadCourses()
+      await held
+      return data
+    })
+
+    const staleLoad = repo.reload()
+    await expect(repo.deleteCourse('a')).resolves.toBe(true)
+    releaseLoad()
+    await staleLoad
+
+    expect(repo.courses).toEqual([b])
+    expect(repo.loaded).toBe(true)
+
+    await expect(repo.updateSettings({ lastCourseId: 'b' })).resolves.toBe(true)
+    expect((await storage.loadCourses()).courses).toEqual([b])
+  })
+
+  it('serializes a deleteCourse racing an updateSettings: the course stays deleted', async () => {
+    const storage = new MemoryStorage()
+    const a = makeCourse({ id: 'a', name: 'A' })
+    const b = makeCourse({ id: 'b', name: 'B' })
+    await storage.saveCourses({ courses: [a, b], settings: { speechEnabled: true } })
+
+    const repo = new CoursesRepo(storage)
+    await repo.ensureLoaded()
+
+    const [deleted, settingsSaved] = await Promise.all([
+      repo.deleteCourse('a'),
+      repo.updateSettings({ lastCourseId: 'b' }),
+    ])
+    expect([deleted, settingsSaved]).toEqual([true, true])
+
+    const data = await storage.loadCourses()
+    expect(data.courses).toEqual([b])
+    expect(data.settings).toEqual({ speechEnabled: true, lastCourseId: 'b' })
+    expect(repo.courses).toEqual([b])
+  })
+
+  it('resumePendingDeletions finishes the cascade and reloads the snapshot', async () => {
+    const { storage, marked } = await seededPendingDeletion()
+
+    const repo = new CoursesRepo(storage)
+    await repo.ensureLoaded()
+    expect(repo.courses.map((each) => each.id)).toEqual(['a', 'b'])
+
+    await expect(repo.resumePendingDeletions()).resolves.toEqual([
+      { kind: 'completed', courseId: 'a', courseName: 'A', sessionsDeleted: 1 },
+    ])
+    expect(repo.courses).toEqual([marked.other])
+    expect(repo.settings.pendingCourseDeletions).toBeUndefined()
+    expect((await storage.listSessions()).map((each) => each.id)).toEqual(['s-b'])
+  })
+
+  it('resumePendingDeletions with nothing pending resolves [] and touches nothing', async () => {
+    const storage = new MemoryStorage()
+    const course = makeCourse({ id: 'a', name: 'A' })
+    await storage.saveCourses({ courses: [course], settings: { speechEnabled: true } })
+
+    const repo = new CoursesRepo(storage)
+    await repo.ensureLoaded()
+    const reload = vi.spyOn(repo, 'reload')
+
+    await expect(repo.resumePendingDeletions()).resolves.toEqual([])
+    expect(reload).not.toHaveBeenCalled()
+    expect(repo.courses).toEqual([course])
+  })
+
+  it('serializes a resume racing a createCourse: both survive', async () => {
+    const { storage } = await seededPendingDeletion()
+
+    const repo = new CoursesRepo(storage, {
+      newId: () => 'c',
+      now: () => '2026-07-14T10:00:00.000Z',
+    })
+    await repo.ensureLoaded()
+
+    const [outcomes, created] = await Promise.all([
+      repo.resumePendingDeletions(),
+      repo.createCourse({ name: 'C', direction: 'ltr', minLapTimeMs: 3000 }),
+    ])
+    expect(outcomes.map((outcome) => outcome.kind)).toEqual(['completed'])
+    expect(created).not.toBeNull()
+
+    // The new course is not destroyed by the resume's commit write, and the
+    // resumed course does not come back through createCourse's write.
+    const data = await storage.loadCourses()
+    expect(data.courses.map((each) => each.id)).toEqual(['b', 'c'])
+    expect(repo.courses.map((each) => each.id)).toEqual(['b', 'c'])
+  })
+
+  it('serializes a resume racing a deleteCourse of another course: neither is reverted', async () => {
+    const { storage } = await seededPendingDeletion()
+
+    const repo = new CoursesRepo(storage)
+    await repo.ensureLoaded()
+
+    const [outcomes, deleted] = await Promise.all([
+      repo.resumePendingDeletions(),
+      repo.deleteCourse('b'),
+    ])
+    expect(outcomes.map((outcome) => outcome.kind)).toEqual(['completed'])
+    expect(deleted).toBe(true)
+
+    const data = await storage.loadCourses()
+    expect(data.courses).toEqual([])
+    expect(data.settings.pendingCourseDeletions).toBeUndefined()
+    expect(repo.courses).toEqual([])
+    expect(await storage.listSessions()).toEqual([])
+  })
+
+  it('importAll merges through the queue; a later updateSettings keeps the imported courses', async () => {
+    const source = new MemoryStorage()
+    const imported = makeCourse({ id: 'imported', name: 'Imported' })
+    await source.saveCourses({ courses: [imported], settings: { speechEnabled: true } })
+    await source.saveSession(makeSession({ id: 's-imported', courseId: 'imported' }))
+    const envelope = await source.exportAll()
+
+    const storage = new MemoryStorage()
+    const local = makeCourse({ id: 'local', name: 'Local' })
+    await storage.saveCourses({ courses: [local], settings: { speechEnabled: true } })
+
+    const repo = new CoursesRepo(storage)
+    await repo.ensureLoaded()
+
+    await expect(repo.importAll(envelope)).resolves.toEqual({
+      coursesAdded: 1,
+      coursesSkipped: 0,
+      sessionsAdded: 1,
+      sessionsSkipped: 0,
+    })
+    expect(repo.courses.map((each) => each.id)).toEqual(['local', 'imported'])
+
+    // The missing-reload bug: without importAll's reload this write persists the
+    // pre-import course list and drops the import on the floor.
+    await expect(repo.updateSettings({ lastCourseId: 'local' })).resolves.toBe(true)
+    expect((await storage.loadCourses()).courses.map((each) => each.id)).toEqual([
+      'local',
+      'imported',
+    ])
+  })
+
+  it('a partially-applied importAll still reloads: the landed courses are not dropped', async () => {
+    const source = new MemoryStorage()
+    const imported = makeCourse({ id: 'imported', name: 'Imported' })
+    await source.saveCourses({ courses: [imported], settings: { speechEnabled: true } })
+    await source.saveSession(makeSession({ id: 's-imported', courseId: 'imported' }))
+    const envelope = await source.exportAll()
+
+    const storage = new MemoryStorage()
+    const repo = new CoursesRepo(storage)
+    await repo.ensureLoaded()
+
+    // importIntoStorage writes the merged course list first, then the sessions:
+    // this import fails halfway, with courses.json already rewritten.
+    vi.spyOn(storage, 'saveSession').mockRejectedValue(new StorageError('write-failed', 'disk'))
+    await expect(repo.importAll(envelope)).resolves.toBeNull()
+    expect(repo.lastError).toEqual({ kind: 'write-failed', message: 'disk' })
+    expect(repo.courses).toEqual([imported])
+
+    await expect(repo.updateSettings({ speechEnabled: false })).resolves.toBe(true)
+    expect((await storage.loadCourses()).courses).toEqual([imported])
+  })
+
+  it('a failed importAll resolves null with lastError set', async () => {
+    const source = new MemoryStorage()
+    await source.saveCourses({ courses: [makeCourse({ id: 'a' })], settings: { speechEnabled: true } })
+    const envelope = await source.exportAll()
+
+    const repo = new CoursesRepo(failingStorage(new StorageError('quota-exceeded', 'full')))
+    await expect(repo.importAll(envelope)).resolves.toBeNull()
+    expect(repo.lastError).toEqual({ kind: 'quota-exceeded', message: 'full' })
+  })
+
+  it('exportAll resolves the envelope; a failure resolves null with lastError set', async () => {
+    const storage = new MemoryStorage({ now: () => '2026-07-14T10:00:00.000Z' })
+    const course = makeCourse({ id: 'a', name: 'A' })
+    await storage.saveCourses({ courses: [course], settings: { speechEnabled: true } })
+
+    const repo = new CoursesRepo(storage)
+    const envelope = await repo.exportAll()
+    expect(envelope?.courses).toEqual([course])
+    expect(repo.lastError).toBeNull()
+
+    vi.spyOn(storage, 'exportAll').mockRejectedValue(new StorageError('corrupt', 'unreadable'))
+    await expect(repo.exportAll()).resolves.toBeNull()
+    expect(repo.lastError).toEqual({ kind: 'corrupt', message: 'unreadable' })
+  })
+
+  it('exportAll is serialized against a deleteCourse: it never observes a half-done cascade', async () => {
+    const storage = new MemoryStorage()
+    const a = makeCourse({ id: 'a', name: 'A' })
+    const b = makeCourse({ id: 'b', name: 'B' })
+    await storage.saveCourses({ courses: [a, b], settings: { speechEnabled: true } })
+    await storage.saveSession(makeSession({ id: 's-a', courseId: 'a' }))
+    await storage.saveSession(makeSession({ id: 's-b', courseId: 'b' }))
+
+    const repo = new CoursesRepo(storage)
+    await repo.ensureLoaded()
+
+    const [deleted, envelope] = await Promise.all([repo.deleteCourse('a'), repo.exportAll()])
+    expect(deleted).toBe(true)
+
+    // Every session in the envelope belongs to a course in the same envelope:
+    // an export taken mid-cascade would list s-a under a course that is gone.
+    const courseIds = new Set(envelope?.courses.map((each) => each.id))
+    expect(envelope?.sessions.every((session) => courseIds.has(session.courseId))).toBe(true)
+    expect(envelope?.courses).toEqual([b])
   })
 
   it('onChange fires on load and on every save outcome', async () => {
@@ -294,6 +687,35 @@ describe('SessionsRepo', () => {
 
     vi.spyOn(storage, 'saveSession').mockRejectedValue(new StorageError('write-failed', 'disk'))
     await expect(repo.saveSession(makeSession({ id: 's-old' }))).resolves.toBe(false)
+    expect(repo.lastError).toEqual({ kind: 'write-failed', message: 'disk' })
+    expect(repo.summaries).toEqual(before)
+  })
+
+  it('deleteSession drops the summary and removes the session', async () => {
+    const { storage } = await seeded()
+    const repo = new SessionsRepo(storage)
+    await repo.ensureLoaded()
+
+    await expect(repo.deleteSession('s-old')).resolves.toBe(true)
+    expect(repo.summaries.map((summary) => summary.id)).toEqual(['s-new', 's-other'])
+    expect(repo.lastError).toBeNull()
+    await expect(storage.loadSession('s-old')).rejects.toThrow()
+
+    // Idempotent at the seam: a double-tap resolves and changes nothing.
+    await expect(repo.deleteSession('s-old')).resolves.toBe(true)
+    expect(repo.summaries.map((summary) => summary.id)).toEqual(['s-new', 's-other'])
+  })
+
+  it('a failed deleteSession resolves false with lastError set, summaries untouched', async () => {
+    const { storage } = await seeded()
+    const repo = new SessionsRepo(storage)
+    await repo.ensureLoaded()
+    const before = repo.summaries
+
+    vi.spyOn(storage, 'deleteSession').mockRejectedValue(new StorageError('write-failed', 'disk'))
+    await expect(repo.deleteSession('s-old')).resolves.toBe(false)
+    // Unlike loadSession/latestForCourse: a delete the store refused is an
+    // app-wide storage condition, not a per-caller miss.
     expect(repo.lastError).toEqual({ kind: 'write-failed', message: 'disk' })
     expect(repo.summaries).toEqual(before)
   })

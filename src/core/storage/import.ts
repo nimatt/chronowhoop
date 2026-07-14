@@ -7,6 +7,7 @@
 // courses applied before sessions.
 
 import type { Course, Session } from '../domain/types'
+import { pendingDeletionsTouchedBy, withoutPendingDeletions } from './delete'
 import {
   parseExportEnvelope,
   SchemaVersionError,
@@ -116,23 +117,39 @@ export interface ImportTarget {
 // A mid-import write failure aborts with that write's StorageError and the
 // counts so far are lost; recovery is re-importing the same file, which
 // merge-by-id makes idempotent (already-landed items are skipped). When the
-// plan adds nothing, nothing is written.
+// plan adds nothing AND no pending deletion is abandoned, nothing is written.
+//
+// The abandonment (pendingDeletionsTouchedBy, delete.ts) rides in the SAME
+// courses write, ahead of every session write, so an import that dies half-way
+// still cannot leave a marker that would replay a cascade over what it just
+// restored — and it happens even when the plan adds no course at all, which is
+// the common restore case: an interrupted cascade keeps the course present
+// (the INTENT write says so), so re-importing the backup adds only sessions.
 export async function importIntoStorage(
   target: ImportTarget,
   envelope: ExportEnvelope,
 ): Promise<ImportResult> {
   const existing = await target.loadCourses()
   const summaries = await target.listSessions()
+  const envelopeCourseIds = new Set(envelope.courses.map((course) => course.id))
+  const envelopeSessionIds = new Set(envelope.sessions.map((session) => session.id))
   const plan = computeImportPlan(
     envelope,
     new Set(existing.courses.map((course) => course.id)),
     new Set(summaries.map((summary) => summary.id)),
   )
-  if (plan.coursesToAdd.length > 0) {
-    await target.saveCourses({
-      courses: [...existing.courses, ...plan.coursesToAdd],
-      settings: existing.settings,
-    })
+  const abandonedDeletions = pendingDeletionsTouchedBy(
+    existing,
+    envelopeCourseIds,
+    envelopeSessionIds,
+  )
+  if (plan.coursesToAdd.length > 0 || abandonedDeletions.length > 0) {
+    await target.saveCourses(
+      withoutPendingDeletions(
+        { courses: [...existing.courses, ...plan.coursesToAdd], settings: existing.settings },
+        abandonedDeletions,
+      ),
+    )
   }
   for (const session of plan.sessionsToAdd) {
     await target.saveSession(session)

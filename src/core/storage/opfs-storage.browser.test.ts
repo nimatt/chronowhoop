@@ -14,7 +14,7 @@ import {
   type QuarantineEvent,
 } from './opfs-storage'
 import { isNotFoundError } from './storage'
-import { describeStorageContract, makeSession } from './storage-contract'
+import { describeStorageContract, makeCourse, makeSession } from './storage-contract'
 
 const TEST_ROOT_PREFIX = 'chronowhoop-opfs-storage-test-'
 
@@ -135,6 +135,62 @@ describe('OpfsStorage crash simulation and quarantine (real OPFS)', () => {
       },
     ])
     expect((await storage.listSessions()).map((s) => s.id)).toEqual([survivor.id])
+  })
+
+  // Plan 09: the crash state a two-phase cascade can leave behind. Only real
+  // OPFS proves the marker survives as bytes and is READ BACK by a fresh
+  // instance — parseSettings drops unknown keys, so a marker it did not parse
+  // would make the whole recovery mechanism inert dead code that every unit
+  // test with a shared in-memory fake would still pass.
+  it('an interrupted cascade: the marker survives a relaunch, and the resume finishes it', async () => {
+    const { dir, remove } = await createTestRoot()
+    cleanups.push(remove)
+    // locks: undefined models an absent Web Locks API, so the "relaunched"
+    // instance is a writer without waiting on the crashed one's lock.
+    const open = () => {
+      const storage = new OpfsStorage({
+        rootDirectory: () => Promise.resolve(dir),
+        locks: undefined,
+      })
+      cleanups.push(() => {
+        storage.dispose()
+      })
+      return storage
+    }
+
+    const course = makeCourse()
+    const session = makeSession({ courseId: course.id })
+    const marker = { courseId: course.id, courseName: course.name, sessionIds: [session.id] }
+
+    const crashed = open()
+    await crashed.saveSession(session)
+    // Step 1 [INTENT], then the crash: the course is still present and still
+    // counts a session file that is still on disk.
+    await crashed.saveCourses({
+      courses: [course],
+      settings: {
+        speechEnabled: true,
+        lastCourseId: course.id,
+        pendingCourseDeletions: [marker],
+      },
+    })
+
+    const relaunched = open()
+    expect((await relaunched.loadCourses()).settings.pendingCourseDeletions).toEqual([marker])
+
+    expect(await relaunched.resumePendingDeletions()).toEqual([
+      {
+        kind: 'completed',
+        courseId: course.id,
+        courseName: course.name,
+        sessionsDeleted: 1,
+      },
+    ])
+
+    const after = await relaunched.loadCourses()
+    expect(after.courses).toEqual([])
+    expect(after.settings).toEqual({ speechEnabled: true })
+    expect(await relaunched.listSessions()).toEqual([])
   })
 
   it('a second instance is read-only under the real Web Locks API (retry also denied)', async () => {

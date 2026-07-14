@@ -151,3 +151,160 @@ describe('seam/webcodecs-capture-only-in-detection', () => {
     await expectSeamError('handle.getDirectory()', 'src/core/detection/a.ts', 'no-restricted-syntax')
   })
 })
+
+// The courses.json critical section (plan 09 item 6). CoursesRepo.enqueueWrite
+// is the app's only serialization point for a whole-document read-merge-write,
+// and a second writer resurrects deleted courses with their sessions already
+// destroyed. This was a comment in repos.ts — a comment that Home.svelte
+// (storage.importAll) and export-action.ts (storage.exportAll) had ALREADY
+// violated while it stood — so it is a seam now, and these tests are what stop
+// it rotting back into a comment.
+describe('seam/courses-json-critical-section', () => {
+  const queuedMembers = [
+    'saveCourses',
+    'deleteCourse',
+    'deleteSession',
+    'importAll',
+    'exportAll',
+    'resumePendingDeletions',
+  ]
+
+  // The two static shapes a Storage handle takes in this codebase — and the two
+  // that actually shipped as violations.
+  const handles = {
+    'a bare `storage` binding': (member: string) => `storage.${member}(x)`,
+    'a `.storage` property': (member: string) => `context.storage.${member}(x)`,
+    'computed access on a `.storage` property': (member: string) =>
+      `context.storage['${member}'](x)`,
+    'destructuring a `storage` binding': (member: string) => `const { ${member} } = storage`,
+  }
+
+  for (const member of queuedMembers) {
+    for (const [shape, build] of Object.entries(handles)) {
+      test(`UI-file Storage.${member} via ${shape} errors`, async () => {
+        await expectSeamError(build(member), 'src/ui/screens/a.ts', 'no-restricted-syntax')
+      })
+    }
+  }
+
+  test('the same calls inside src/ui/data/repos.ts pass (it IS the critical section)', async () => {
+    await expectNoSeamError(
+      queuedMembers.map((member) => `this.storage.${member}(x)`).join('\n'),
+      'src/ui/data/repos.ts',
+    )
+  })
+
+  // The load-bearing negative case. CoursesRepoView deliberately exposes
+  // deleteCourse / importAll / exportAll and SessionsRepoView exposes
+  // deleteSession — those are the sanctioned doors, and storage-context.svelte.ts
+  // calls resumePendingDeletions on the repo CLASS. Ban the bare method NAMES and
+  // every one of these fires: the seam has to discriminate on the handle. (Same
+  // lesson as `remove`, rejected from the OPFS list because it would hit
+  // `element.remove()`.)
+  test('the repository views keep their names — the ban is on the handle, not the method name', async () => {
+    await expectNoSeamError(
+      [
+        'context.coursesRepo.deleteCourse(id)',
+        'context.coursesRepo.importAll(envelope)',
+        'context.coursesRepo.exportAll()',
+        'context.sessionsRepo.deleteSession(id)',
+        'coursesRepo.resumePendingDeletions()',
+      ].join('\n'),
+      'src/ui/screens/a.ts',
+    )
+  })
+
+  test('a queued call in a .svelte component script errors (the Home.svelte violation)', async () => {
+    await expectSeamError(
+      '<script lang="ts">\n  void context.storage.importAll(envelope)\n</script>',
+      'src/ui/screens/Home.svelte',
+      'no-restricted-syntax',
+    )
+  })
+
+  test('saveSession is NOT queued — the fly path writes session files, not courses.json', async () => {
+    await expectNoSeamError('storage.saveSession(session)', 'src/ui/data/storage-context.svelte.ts')
+  })
+
+  test('a queued call in a test file passes (tests hold a real Storage on purpose)', async () => {
+    await expectNoSeamError('storage.deleteCourse(id)', 'src/ui/screens/a.browser.test.ts')
+  })
+
+  test('aliasing the handle is a deliberate, documented gap (not caught)', async () => {
+    // Same boundary as the OPFS seam's dynamic-access gap: this is a guardrail
+    // against accidental bypass, not an adversarial one. Layer 1 (the import
+    // ban below) is what makes the alias hard to obtain in the first place.
+    await expectNoSeamError('const s = storage\ns.deleteCourse(id)', 'src/ui/screens/a.ts')
+  })
+})
+
+// Layer 1 of the same seam: a Storage handle exists in exactly two src/ui files.
+// Nothing else may even NAME the type — so re-widening StorageContext back to a
+// `readonly storage: Storage` fails at the import line, before there is anything
+// to call.
+describe('seam/storage-handle-only-in-the-data-layer', () => {
+  const importStorage = "import type { Storage } from '../../core/storage/storage'\nexport type X = Storage"
+
+  test('a UI screen naming the Storage type errors', async () => {
+    await expectSeamError(importStorage, 'src/ui/screens/a.ts', 'no-restricted-imports')
+  })
+
+  test('re-widening StorageContext with a Storage handle errors', async () => {
+    // The exact regression this layer exists to catch: the field is what put
+    // storage.deleteCourse() one dot away from every screen in the app.
+    await expectSeamError(
+      "import type { Storage } from '../../core/storage/storage'\nexport interface StorageContext {\n  readonly storage: Storage\n}",
+      'src/ui/data/storage-context.ts',
+      'no-restricted-imports',
+    )
+  })
+
+  test('a UI screen constructing an OpfsStorage errors', async () => {
+    await expectSeamError(
+      "import { OpfsStorage } from '../../core/storage/opfs-storage'\nexport const s = new OpfsStorage({})",
+      'src/ui/screens/a.ts',
+      'no-restricted-imports',
+    )
+  })
+
+  test('product code constructing a MemoryStorage errors', async () => {
+    await expectSeamError(
+      "import { MemoryStorage } from '../../core/storage/memory-storage'\nexport const s = new MemoryStorage()",
+      'src/ui/screens/a.svelte.ts',
+      'no-restricted-imports',
+    )
+  })
+
+  test('the two handle holders may name it', async () => {
+    await expectNoSeamError(importStorage, 'src/ui/data/repos.ts')
+    await expectNoSeamError(importStorage, 'src/ui/data/storage-context.svelte.ts')
+  })
+
+  test('the rest of the storage module stays open — only the handle is restricted', async () => {
+    // SessionSummary, ImportResult, isStorageError, summarizeSession and friends
+    // are ordinary types/helpers the screens read; banning the module wholesale
+    // would have been the lazy version of this seam.
+    await expectNoSeamError(
+      "import { isStorageError, type SessionSummary } from '../../core/storage/storage'\nexport { isStorageError }\nexport type X = SessionSummary",
+      'src/ui/screens/a.ts',
+    )
+  })
+
+  test('the fly path may name the narrowed SessionWriter', async () => {
+    await expectNoSeamError(
+      "import type { SessionWriter } from '../../core/session/session-persister'\nexport type X = SessionWriter",
+      'src/ui/fly/fly-session.svelte.ts',
+    )
+  })
+
+  test('tests may hold a MemoryStorage', async () => {
+    await expectNoSeamError(
+      "import { MemoryStorage } from '../../core/storage/memory-storage'\nexport const s = new MemoryStorage()",
+      'src/ui/screens/a.browser.test.ts',
+    )
+  })
+
+  test('src/core is untouched by this seam (the persister and the contract suite hold handles)', async () => {
+    await expectNoSeamError(importStorage, 'src/core/session/session-persister.ts')
+  })
+})

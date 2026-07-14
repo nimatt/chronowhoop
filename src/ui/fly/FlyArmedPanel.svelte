@@ -123,7 +123,14 @@
     onclick={() => session.discardLastLap()}
     disabled={lastLap === null || lastLap.status === 'discarded'}
   >
-    <svg class="ic" viewBox="0 0 24 24"><path d="M3 6h18M8 6V4h8v2M6 6l1 14h10l1-14" /></svg>
+    <!-- Struck-through mark, NOT a trash can: discarding keeps every byte. The lap
+         stays in the file, in the lap table (rendered line-through, like this glyph)
+         and in the export — it is a timing annotation, not a removal. The trash can
+         means destruction and belongs to delete. -->
+    <svg class="ic" viewBox="0 0 24 24">
+      <rect x="4" y="7" width="16" height="10" rx="3" />
+      <path d="M2 12h20" />
+    </svg>
     Discard last lap
   </button>
   <button class="btn btn-danger btn-stop" onclick={() => session.stopSession()}>

@@ -5,7 +5,7 @@
   import AppBar from '../shared/AppBar.svelte'
 
   // courseId present → edit; absent → new (routes #/course/<id>/edit and
-  // #/course/new). Deletion is out of scope per the product spec.
+  // #/course/new).
   let { context, courseId }: { context: StorageContext; courseId?: string } = $props()
 
   // svelte-ignore state_referenced_locally
@@ -184,9 +184,35 @@
           {editingId === undefined ? 'Create course' : 'Save'}
         </button>
       </div>
+
+      <!-- Edit only: a new course has nothing to delete. The confirmation is a
+           screen of its own (plan 09 item 8), so this only navigates. -->
+      {#if editingId !== undefined}
+        <section class="danger">
+          {#if context.readOnly}
+            <button type="button" class="btn btn-danger-ghost" disabled>
+              {@render deleteLabel()}
+            </button>
+          {:else}
+            <a
+              class="btn btn-danger-ghost"
+              href={hashFor({ id: 'delete-course', courseId: editingId })}
+            >
+              {@render deleteLabel()}
+            </a>
+          {/if}
+        </section>
+      {/if}
     </form>
   {/if}
 </main>
+
+{#snippet deleteLabel()}
+  <svg class="ic" viewBox="0 0 24 24">
+    <path d="M3 6h18M8 6V4h8v2M6 6l1 14h10l1-14" />
+  </svg>
+  Delete course
+{/snippet}
 
 <style>
   /* Pin the CTA to the bottom of the viewport on phones (mockup 02): the
@@ -227,5 +253,15 @@
   .cta {
     margin-top: auto;
     padding-top: 1.5rem;
+  }
+
+  .danger {
+    margin-top: 2rem;
+    padding-top: 1.5rem;
+    border-top: 1px solid var(--c-line);
+  }
+
+  .danger a {
+    text-decoration: none;
   }
 </style>

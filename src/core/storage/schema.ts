@@ -27,11 +27,32 @@ import type { CrossingDetectorConfig } from '../detection/crossing-detector'
 // export envelope (plan 06 item 1 decision; documented in storage.md).
 export const SCHEMA_VERSION = 1
 
+// A course deletion recorded in courses.json before its session files are
+// removed, so a cascade interrupted by a crash can finish (or abandon itself)
+// on the next launch instead of leaving a course whose session count lies.
+export interface PendingCourseDeletion {
+  courseId: string
+  // Captured while the course entry is still present, so a resume can name the
+  // course in its notice without depending on the course still existing.
+  courseName: string
+  // THE BOUNDED WORK LIST: exactly the sessions the user saw counted and
+  // confirmed. A resume may delete these ids and nothing else. Re-deriving the
+  // set at resume time (filtering live sessions by courseId) would turn an
+  // abandoned deletion into an unbounded standing instruction: fail a delete,
+  // walk away, fly the course for another month, and the next launch destroys
+  // sessions that did not exist when the confirmation was given.
+  sessionIds: string[]
+}
+
 // App-level settings stored in courses.json (storage.md). Minimal on purpose.
 export interface AppSettings {
   speechEnabled: boolean
   lastExportAt?: IsoDateString
   lastCourseId?: string
+  // Absent when nothing is pending. An added optional key needs no
+  // SCHEMA_VERSION bump: it is forward-compatible on read, and an older app
+  // drops it on its next write, degrading to the un-marked partial state.
+  pendingCourseDeletions?: PendingCourseDeletion[]
 }
 
 export function defaultAppSettings(): AppSettings {
@@ -120,10 +141,21 @@ function arrayField(obj: SchemaDocument, key: string, path: string): unknown[] {
   return value
 }
 
-function stringField(obj: SchemaDocument, key: string, path: string): string {
-  const value = obj[key]
+function asString(value: unknown, path: string): string {
   if (typeof value !== 'string') {
-    throw new SchemaError(`${path}.${key}: expected string, got ${describeValue(value)}`)
+    throw new SchemaError(`${path}: expected string, got ${describeValue(value)}`)
+  }
+  return value
+}
+
+function stringField(obj: SchemaDocument, key: string, path: string): string {
+  return asString(obj[key], `${path}.${key}`)
+}
+
+function nonEmptyStringField(obj: SchemaDocument, key: string, path: string): string {
+  const value = stringField(obj, key, path)
+  if (value === '') {
+    throw new SchemaError(`${path}.${key}: expected non-empty string, got ""`)
   }
   return value
 }
@@ -202,6 +234,22 @@ function parseCourse(value: unknown, path: string): Course {
   }
 }
 
+function parsePendingCourseDeletion(value: unknown, path: string): PendingCourseDeletion {
+  const obj = asObject(value, path)
+  const sessionIdsPath = `${path}.sessionIds`
+  return {
+    courseId: nonEmptyStringField(obj, 'courseId', path),
+    courseName: stringField(obj, 'courseName', path),
+    sessionIds: arrayField(obj, 'sessionIds', path).map((id, i) =>
+      asString(id, `${sessionIdsPath}[${i}]`),
+    ),
+  }
+}
+
+// This function builds a FRESH object from known keys — an unparsed key is a
+// key silently dropped on every read. pendingCourseDeletions is read here, or
+// the intent marker would be written to disk and lost, leaving the whole
+// crash-recovery mechanism inert.
 function parseSettings(value: unknown, path: string): AppSettings {
   const obj = asObject(value, path)
   const settings: AppSettings = { speechEnabled: booleanField(obj, 'speechEnabled', path) }
@@ -209,6 +257,12 @@ function parseSettings(value: unknown, path: string): AppSettings {
   const lastCourseId = optionalStringField(obj, 'lastCourseId', path)
   if (lastExportAt !== undefined) settings.lastExportAt = lastExportAt
   if (lastCourseId !== undefined) settings.lastCourseId = lastCourseId
+  if (obj.pendingCourseDeletions !== undefined) {
+    const pendingPath = `${path}.pendingCourseDeletions`
+    settings.pendingCourseDeletions = arrayField(obj, 'pendingCourseDeletions', path).map(
+      (pending, i) => parsePendingCourseDeletion(pending, `${pendingPath}[${i}]`),
+    )
+  }
   return settings
 }
 

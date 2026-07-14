@@ -9,7 +9,7 @@
   import IconButton from '../shared/IconButton.svelte'
   import RecTiles from '../shared/RecTiles.svelte'
   import { exportOutcomeNotice, runExport, type ExportNotice } from '../shared/export-action'
-  import { formatShortDate } from './course-format'
+  import { formatShortDate, plural } from './course-format'
   import { computeCourseStats, type CourseStats } from './course-stats'
 
   let { context }: { context: StorageContext } = $props()
@@ -36,8 +36,6 @@
     )
   }
   void loadStats()
-
-  const plural = (count: number, noun: string) => `${String(count)} ${noun}${count === 1 ? '' : 's'}`
 
   function courseMeta(stats: CourseStats | undefined): string {
     if (stats === undefined || stats.sessionCount === 0 || stats.lastFlownAt === undefined) {
@@ -70,33 +68,47 @@
     return `${added}; ${skipped}.`
   }
 
+  // Both failure paths land here: a thrown StorageError from the parse, and the
+  // RepoError behind the repo's null (it reports failure, never rejects).
+  function describeImportFailure(failure: { kind: string; message: string } | null): string {
+    if (failure === null) return 'Import failed.'
+    // 'unsupported-version' already carries the "update the app" phrasing.
+    if (failure.kind === 'unsupported-version') return failure.message
+    if (failure.kind === 'corrupt') return `Not a valid export file — ${failure.message}`
+    return `Import failed: ${failure.message}`
+  }
+
   function describeImportError(error: unknown): string {
-    if (isStorageError(error)) {
-      // 'unsupported-version' already carries the "update the app" phrasing.
-      if (error.kind === 'unsupported-version') return error.message
-      if (error.kind === 'corrupt') return `Not a valid export file — ${error.message}`
-    }
+    if (isStorageError(error)) return describeImportFailure(error)
     return `Import failed: ${error instanceof Error ? error.message : String(error)}`
   }
 
-  // Import (plan 07 item 2, UI half): parse/validate, merge through the
-  // storage seam, then refresh BOTH repos — importAll writes behind their
-  // backs (the invalidation rule in storage-context.ts). The refreshes run
-  // in finally: a mid-import failure may have landed partial writes, and the
-  // UI must show them rather than a stale snapshot. Refreshes never reject
-  // (repo failures land in lastError). loadStats covers the sessions-repo
-  // refresh and recomputes the card records from the merged data.
+  // Import (plan 07 item 2, UI half): parse/validate, then merge through
+  // CoursesRepo — the courses.json critical section, never storage.importAll
+  // directly (plan 09 item 6): importIntoStorage snapshots the course list
+  // before its session writes, so a course deletion committing inside that
+  // prelude would be reverted by an unqueued import.
+  //
+  // The repo reloads itself on both outcomes and reports failure as null with
+  // lastError set. The sessions repo it still writes behind the back of, so
+  // loadStats() runs in finally — refreshing the summaries AND recomputing the
+  // card records, which the repo knows nothing about. In finally, because a
+  // mid-import failure may have landed partial writes and the UI must show them
+  // rather than a stale snapshot.
   async function importFile(file: File): Promise<void> {
     importing = true
     importNotice = null
     try {
       const envelope = parseImportFile(await file.text())
-      const result = await context.storage.importAll(envelope)
-      importNotice = { ok: true, text: describeImportResult(result) }
+      const result = await repo.importAll(envelope)
+      importNotice =
+        result === null
+          ? { ok: false, text: describeImportFailure(repo.lastError) }
+          : { ok: true, text: describeImportResult(result) }
     } catch (error) {
       importNotice = { ok: false, text: describeImportError(error) }
     } finally {
-      await Promise.all([repo.reload(), loadStats()])
+      await loadStats()
       importing = false
     }
   }

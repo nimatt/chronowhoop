@@ -43,6 +43,23 @@ export interface ImportResult {
   sessionsSkipped: number
 }
 
+// What the cascade destroyed, so the caller can say it out loud (the confirm
+// screen promised a count; a partial failure has to be able to contradict it).
+export interface DeleteCourseResult {
+  sessionsDeleted: number
+}
+
+// The result of finishing — or refusing to finish — a cascade that a crash
+// interrupted between its INTENT and COMMIT writes (see deleteCourse).
+export type ResumeOutcome =
+  | { kind: 'completed'; courseId: string; courseName: string; sessionsDeleted: number }
+  // The course was flown again after the interrupted deletion: sessions exist
+  // that the user never confirmed deleting. The deletion is ABANDONED and the
+  // marker cleared — we never destroy data the confirmation screen did not
+  // count. The course survives intact; deleting it again re-states the real,
+  // current blast radius.
+  | { kind: 'abandoned'; courseId: string; courseName: string; reason: 'flown-since' }
+
 export interface Storage {
   // Never rejects with 'not-found': empty storage yields no courses and
   // default settings. DOES reject with 'unsupported-version' when the stored
@@ -82,12 +99,68 @@ export interface Storage {
   // one extra backup nudge.
   importAll(envelope: ExportEnvelope): Promise<ImportResult>
   persistenceStatus(): Promise<PersistenceStatus>
+  // Removes the session's file. IDEMPOTENT: an unknown id RESOLVES — it never
+  // rejects 'not-found'. That is the OPPOSITE of loadSession above, so it gets
+  // implemented wrong unless it is written down: a double-tap and a retry after
+  // a partially-applied cascade must both be safe, and neither is if the second
+  // call throws. Byte-level by filename: the document is never read, so a
+  // corrupt or unsupported-version session is removed as long as its id is
+  // known — deletion is the one operation a broken file cannot refuse.
+  // Quarantine copies (<id>.json.corrupt.<ts>) are never touched: quarantining
+  // was a deliberate rescue, and this is not the quarantine manager.
+  deleteSession(id: string): Promise<void>
+  // Deletes the course AND every session whose courseId === id (cascade, not
+  // orphaning: nothing else would ever list those sessions again, but exportAll
+  // has no course filter, so they would ride out in every export and come back
+  // as "Unknown course" on every import).
+  //
+  // TWO-PHASE, because ADR 0010 gives per-file atomicity only: there is no
+  // multi-file transaction here, so the only thing left to choose is WHICH
+  // crash state you get. This one is self-describing and self-healing:
+  //   1. write courses.json with the course STILL PRESENT and the pending-
+  //      deletion marker added — the exact session ids, captured now    [INTENT]
+  //   2. remove those session files
+  //   3. re-read courses.json and write it back without the course and without
+  //      the marker                                                     [COMMIT]
+  //   4. re-list sessions and remove any that still name the course     [SWEEP]
+  // Step 4 is what forbids the ghost state (a readable session file whose
+  // course is gone) without letting a deletion that has NOT committed destroy
+  // anything: a write that raced the cascade and landed anyway is removed only
+  // once the course is definitively gone. A cascade that fails before its
+  // COMMIT destroys nothing it did not explicitly deleteSession.
+  //
+  // Every read that can reject runs BEFORE step 1. loadCourses can throw
+  // 'unsupported-version', and discovering that after the session files are
+  // gone would strand condemned data in a state no retry can finish: the
+  // sessions destroyed, the course still standing, and no marker to say so.
+  // Step 3 re-reads rather than reusing the step-1 snapshot, so a concurrent
+  // write (or another course's commit) is not reverted by this one.
+  //
+  // Idempotent: an unknown course id still sweeps sessions referencing it —
+  // that is precisely the retry path after a cascade that died mid-flight.
+  // Clears settings.lastCourseId in the commit write when it pointed here.
+  deleteCourse(id: string): Promise<DeleteCourseResult>
+  // Finishes — or abandons — any cascade interrupted between steps 1 and 3,
+  // replaying only the session ids the marker recorded. NEVER REJECTS: this
+  // runs at startup, where there is no one to retry it, so a failed resume
+  // leaves the marker in place for the next launch rather than surfacing an
+  // error nobody can act on. Resolves [] when nothing is pending, and on a
+  // read-only instance, which holds no writer lock and must not try.
+  resumePendingDeletions(): Promise<ResumeOutcome[]>
 }
 
 // 'unsupported-version': the document is intact but written by a newer app
 // (or no migration chain reaches it). Refused in place — never quarantined —
 // so a version rollback strands no data; Phase 7 import reuses this kind for
 // its refuse-newer rule.
+//
+// Deletion adds no kind: it is a write, and fails like one ('write-failed' /
+// 'quota-exceeded' — a two-phase delete writes courses.json twice, so it can
+// hit quota even while freeing space). A read-only tab rejects 'write-failed'
+// through OpfsStorage's guardWriter(), and that is the REAL guard: readOnly is
+// still false for up to LOCK_RETRY_DELAY_MS while the lock request settles, so
+// a delete button disabled on that flag is cosmetic — the storage layer, not
+// the UI, is what makes a second tab harmless.
 export type StorageErrorKind =
   | 'not-found'
   | 'corrupt'

@@ -22,6 +22,14 @@ describe('routeFromHash', () => {
       id: 'edit-course',
       courseId: 'abc-123',
     })
+    expect(routeFromHash('#/course/abc-123/delete')).toEqual({
+      id: 'delete-course',
+      courseId: 'abc-123',
+    })
+    expect(routeFromHash('#/session/s-9/delete')).toEqual({
+      id: 'delete-session',
+      sessionId: 's-9',
+    })
   })
 
   it('plain #/fly (no course) no longer exists', () => {
@@ -39,7 +47,9 @@ describe('routeFromHash', () => {
     expect(routeFromHash('#/fly/')).toEqual({ id: 'home' })
     expect(routeFromHash('#/course/')).toEqual({ id: 'home' })
     expect(routeFromHash('#/course//edit')).toEqual({ id: 'home' })
+    expect(routeFromHash('#/course//delete')).toEqual({ id: 'home' })
     expect(routeFromHash('#/session/')).toEqual({ id: 'home' })
+    expect(routeFromHash('#/session//delete')).toEqual({ id: 'home' })
     expect(routeFromHash('#//')).toEqual({ id: 'home' })
   })
 
@@ -48,10 +58,16 @@ describe('routeFromHash', () => {
     expect(routeFromHash('#/session/abc/extra')).toEqual({ id: 'home' })
     expect(routeFromHash('#/course/abc/nope')).toEqual({ id: 'home' })
     expect(routeFromHash('#/course/abc/edit/extra')).toEqual({ id: 'home' })
+    expect(routeFromHash('#/course/abc/delete/extra')).toEqual({ id: 'home' })
+    expect(routeFromHash('#/session/abc/delete/extra')).toEqual({ id: 'home' })
   })
 
   it('reserves "new" — #/course/new/edit is not an edit of a course named new', () => {
     expect(routeFromHash('#/course/new/edit')).toEqual({ id: 'home' })
+  })
+
+  it('reserves "new" — #/course/new/delete is not a delete of a course named new', () => {
+    expect(routeFromHash('#/course/new/delete')).toEqual({ id: 'home' })
   })
 })
 
@@ -65,6 +81,8 @@ describe('hashFor', () => {
     { id: 'session', sessionId: 's-1' },
     { id: 'new-course' },
     { id: 'edit-course', courseId: 'c-1' },
+    { id: 'delete-course', courseId: 'c-1' },
+    { id: 'delete-session', sessionId: 's-1' },
   ]
 
   it.each(roundTrips)('round-trips $id through routeFromHash', (route) => {
@@ -76,6 +94,8 @@ describe('hashFor', () => {
     expect(hashFor({ id: 'fly', courseId: 'c-1' })).toBe('#/fly/c-1')
     expect(hashFor({ id: 'new-course' })).toBe('#/course/new')
     expect(hashFor({ id: 'edit-course', courseId: 'c-1' })).toBe('#/course/c-1/edit')
+    expect(hashFor({ id: 'delete-course', courseId: 'c-1' })).toBe('#/course/c-1/delete')
+    expect(hashFor({ id: 'delete-session', sessionId: 's-1' })).toBe('#/session/s-1/delete')
   })
 })
 
@@ -89,6 +109,8 @@ describe('capability gate exemption', () => {
     expect(isGateExempt({ id: 'session', sessionId: 's-1' })).toBe(false)
     expect(isGateExempt({ id: 'new-course' })).toBe(false)
     expect(isGateExempt({ id: 'edit-course', courseId: 'c-1' })).toBe(false)
+    expect(isGateExempt({ id: 'delete-course', courseId: 'c-1' })).toBe(false)
+    expect(isGateExempt({ id: 'delete-session', sessionId: 's-1' })).toBe(false)
   })
 
   it('shows the unsupported screen on product routes when capabilities fail', () => {

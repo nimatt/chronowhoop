@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { Course, Session } from '../domain/types'
 import { computeImportPlan, importIntoStorage, parseImportFile, type ImportTarget } from './import'
-import { SCHEMA_VERSION, type ExportEnvelope } from './schema'
+import { SCHEMA_VERSION, type ExportEnvelope, type PendingCourseDeletion } from './schema'
 import {
   isStorageError,
   StorageError,
@@ -158,6 +158,7 @@ describe('importIntoStorage', () => {
     options: {
       seedCourses?: Course[]
       seedSessions?: Session[]
+      seedMarkers?: PendingCourseDeletion[]
       failSaveSessionCalls?: number[]
     } = {},
   ) {
@@ -165,7 +166,12 @@ describe('importIntoStorage', () => {
     const writes: string[] = []
     let data: CoursesData = {
       courses: structuredClone(options.seedCourses ?? []),
-      settings: { speechEnabled: true },
+      settings: {
+        speechEnabled: true,
+        ...(options.seedMarkers
+          ? { pendingCourseDeletions: structuredClone(options.seedMarkers) }
+          : {}),
+      },
     }
     const sessions = new Map(
       (options.seedSessions ?? []).map((session) => [session.id, structuredClone(session)]),
@@ -195,6 +201,7 @@ describe('importIntoStorage', () => {
       writes,
       courseIds: () => data.courses.map((course) => course.id),
       sessionIds: () => [...sessions.keys()],
+      markers: () => structuredClone(data.settings.pendingCourseDeletions ?? []),
     }
   }
 
@@ -273,6 +280,76 @@ describe('importIntoStorage', () => {
       coursesSkipped: 1,
       sessionsAdded: 0,
       sessionsSkipped: 1,
+    })
+  })
+
+  // The import is the product's only undo — the delete screen says so — and the
+  // state it is most often asked to undo is a CASCADE THAT DIED between INTENT
+  // and COMMIT: the marker on disk, some session files gone, the course still
+  // present. Restoring the backup into that state and leaving the marker
+  // standing would let the next launch replay the cascade over exactly the data
+  // just restored (the restored ids ARE the recorded ids, so no stray exists and
+  // flown-since does not fire) — and destroy it a second time, silently.
+  describe('abandons a pending deletion the envelope covers', () => {
+    it('drops the marker in the same courses write when the envelope names the course', async () => {
+      const course = makeCourse()
+      const session = makeSession({ courseId: course.id })
+      const rig = makeTarget({
+        seedMarkers: [{ courseId: course.id, courseName: course.name, sessionIds: [session.id] }],
+      })
+
+      await importIntoStorage(rig.target, makeEnvelope({ courses: [course], sessions: [session] }))
+
+      expect(rig.markers()).toEqual([])
+      // The marker goes AHEAD of the session writes, so an import that dies
+      // half-way still cannot leave one behind.
+      expect(rig.writes).toEqual(['saveCourses', `saveSession:${session.id}`])
+    })
+
+    it('writes courses.json even when the plan adds no course — the restore case', async () => {
+      // The INTENT write keeps the course present, so re-importing the backup
+      // after an interrupted cascade adds only sessions: a marker-clearing write
+      // gated on coursesToAdd would never happen at all.
+      const course = makeCourse()
+      const restored = makeSession({ courseId: course.id })
+      const rig = makeTarget({
+        seedCourses: [course],
+        seedMarkers: [{ courseId: course.id, courseName: course.name, sessionIds: [restored.id] }],
+      })
+
+      await importIntoStorage(rig.target, makeEnvelope({ courses: [course], sessions: [restored] }))
+
+      expect(rig.markers()).toEqual([])
+      expect(rig.courseIds()).toEqual([course.id])
+      expect(rig.writes).toEqual(['saveCourses', `saveSession:${restored.id}`])
+    })
+
+    it('abandons on a session id alone, even when the envelope carries no course', async () => {
+      const orphanBackup = makeSession({ courseId: 'doomed' })
+      const rig = makeTarget({
+        seedMarkers: [
+          { courseId: 'doomed', courseName: 'Basement', sessionIds: [orphanBackup.id] },
+        ],
+      })
+
+      await importIntoStorage(rig.target, makeEnvelope({ sessions: [orphanBackup] }))
+
+      expect(rig.markers()).toEqual([])
+      expect(rig.sessionIds()).toEqual([orphanBackup.id])
+    })
+
+    it('leaves a marker the envelope does not touch alone', async () => {
+      const untouched: PendingCourseDeletion = {
+        courseId: 'other',
+        courseName: 'Garage loop',
+        sessionIds: ['other-session'],
+      }
+      const course = makeCourse()
+      const rig = makeTarget({ seedMarkers: [untouched] })
+
+      await importIntoStorage(rig.target, makeEnvelope({ courses: [course] }))
+
+      expect(rig.markers()).toEqual([untouched])
     })
   })
 })

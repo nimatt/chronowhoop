@@ -6,7 +6,7 @@
 - **Session** — one visit/flying stint on a course. Owns: start time, free-text note, a snapshot of the detection config actually used, and the ordered list of laps.
 - **Lap** — duration (ms), wall-clock time of day when completed, and status (`valid` | `discarded`).
 
-A course can have any number of sessions. Deleting is out of scope for this spec revision except discarding laps.
+A course can have any number of sessions. A course can be deleted, and takes its sessions with it; a session can be deleted on its own (see **Deleting**). There is no delete-lap: a lap is *discarded*, which is a different thing — it keeps every byte, in the file, in the lap table and in the export. Laps only go when the session holding them does.
 
 ## Session lifecycle
 
@@ -46,6 +46,22 @@ A speech on/off toggle (a stored app-level setting, default on) silences lap ann
 
 Table of all laps: lap number, duration (two decimals displayed; true resolution is camera-frame granularity, ±1 frame), time of day, status. Best lap and the best-three-consecutive window are visually highlighted. Discarded laps are shown struck through, not hidden. Session header shows course name, date, note, and both records; course view shows all-time records and the session list.
 
+## Deleting
+
+A **session** is deleted from its session view. A **course** is deleted from its edit form, and it takes every session flown on it with it — a course that keeps a session count it no longer owns would lie about itself, and nothing in the app would ever list an orphaned session again while every export would still carry it ([ADR 0011](../decisions/0011-deletion-cascade-and-ordering.md)).
+
+Both go through a confirmation **screen**, not a dialog: routes are the app's navigation vocabulary (ADR 0007), so the screen gets Back-to-cancel for free, and the transition breaks the reflex-tap rhythm that makes an in-place confirm unsafe under a cold thumb at the field. The course confirmation states the blast radius before the fact — how many sessions and how many laps (**all** laps, valid and discarded) — and never states a count it does not have: while the sessions are still being counted, the button is disabled and the copy promises "every session and lap" rather than "0 sessions". Deletion is **immediate and permanent**: no undo, no trash, no soft-delete. A read-only tab (another tab holds the writer lock) cannot delete.
+
+**Deleting is not discarding.** Discard marks a *lap* `discarded`; the lap keeps every byte and stays in the file, in the lap table (struck through) and in the export. It is a timing-correctness annotation, instant and unconfirmed, and it destroys nothing. There is no delete-lap and no un-discard.
+
+**Records need no maintenance.** They are derived from lap data on read, so deleting a session simply removes its laps from the derivation and the course's all-time records recompute from what is left. Best-three windows never span a session boundary anyway, so no window is ever left half-destroyed.
+
+Deleting a course's **most recent** session rolls the next session's detection-config and note prefill back to the one before it. That is correct, not a side effect to fix: the prefill means "what you last used here".
+
+**The export file is the recovery path.** The confirmation warns when what is about to go was never exported, or was flown after the last export, and offers to take a backup first (the app can only claim it handed the file over, not that it was saved — so it says so). Importing a file that still contains a deleted course brings the course and its sessions back. That is **by design**: it is the only undo this product has, and it is the same merge-by-ID import that carries data from phone to desktop.
+
+A deletion interrupted by a crash — the app killed after the session files went but before the course did — **completes itself on the next launch**, and says so in a dismissable notice. If the course was flown again in the meantime, the deletion is **abandoned** instead: the course survives intact and the app says that too. The app never destroys sessions the confirmation did not count; deleting again re-states the real, current blast radius. **Importing a backup abandons a pending deletion the same way**: putting the data back is a statement that it should exist, and it outranks a destruction that never finished — otherwise the next launch would quietly complete the deletion over the file the pilot had just restored. See `storage.md` for the mechanism.
+
 ## Storage & portability
 
 All data is JSON in the browser's origin-private file system — see `storage.md`. Export produces a file via download/share sheet; import merges on another device. No backend, no account.
@@ -61,3 +77,6 @@ Phone-first (device propped beside the gate), desktop supported for both timing 
 - Alternative capture routes beyond WebCodecs (the detection-source seam exists; a canvas-based iOS fallback is a candidate, not a v1 goal — ADR 0009)
 - Cloud sync (storage interface is the seam)
 - Per-crossing video capture (frame ring buffer is the seam)
+- Delete-lap / un-discard — discard is an annotation, not a deletion, and it is not reversible
+- Trash / undo / soft-delete — deletion is permanent; the export file is the recovery path (ADR 0011)
+- Cross-device delete propagation — deleting on the phone does not delete on the desktop; that belongs to sync

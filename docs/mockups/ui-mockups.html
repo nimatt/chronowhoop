@@ -209,7 +209,10 @@
   .btn-primary { background: var(--c-signal); color: #04120f; }
   .btn-warm { background: var(--c-record); color: #1a1204; }
   .btn-ghost { background: var(--c-panel); border-color: var(--c-line); color: var(--c-ink); }
+  /* Filled danger is reserved: the confirm button on the delete screens, and the armed STOP. */
   .btn-danger { background: var(--c-danger); color: #1b0407; }
+  /* Danger-ghost initiates a delete — reads as destruction, but isn't what the thumb lands on. */
+  .btn-danger-ghost { background: rgba(255, 82, 101, 0.08); border-color: rgba(255, 82, 101, 0.4); color: var(--c-danger); }
 
   /* form controls */
   .field { display: flex; flex-direction: column; gap: 8px; }
@@ -330,6 +333,21 @@
   .guide { background: rgba(51,222,207,.06); border: 1px solid var(--c-signal-dim); border-radius: 12px; padding: 14px; font-size: .86rem; line-height: 1.5; color: var(--c-ink); }
   .guide b { color: var(--c-signal); }
 
+  /* notices */
+  .notice-warning { padding: 8px 11px; border-radius: 6px; background: rgba(255,184,77,.07); border: 1px solid var(--c-record-dim); color: var(--c-record); font-size: .9rem; line-height: 1.45; margin: 0; }
+
+  /* delete confirm screens — full screens on their own routes, never modals.
+     The confirm CTA FLOWS under the copy; it is deliberately NOT pinned to the
+     viewport bottom the way the course form's Save is. A filled-red confirm
+     parked on the thumb line is the reflex tap this whole screen exists to
+     prevent — the reach is the point. */
+  .del { display: flex; flex-direction: column; gap: 12px; }
+  .del h2 { margin: 8px 0 0; font-size: 1.15rem; letter-spacing: -0.01em; line-height: 1.3; }
+  .del .lead { margin: 0; color: var(--c-dim); font-size: .95rem; line-height: 1.5; }
+  /* Cancel above Delete: the safe choice sits under the reading thumb, the destructive one is the reach. */
+  .del .cta { margin-top: 12px; display: flex; flex-direction: column; gap: 12px; }
+  .danger { margin-top: 32px; padding-top: 24px; border-top: 1px solid var(--c-line); }
+
   .footer { max-width: 1220px; margin: 60px auto 0; padding-top: 20px; border-top: 1px solid var(--pg-line); color: var(--pg-dim); font-size: .84rem; font-family: var(--font-mono); letter-spacing: .02em; }
 
   :focus-visible { outline: 2px solid var(--pg-accent); outline-offset: 3px; }
@@ -356,7 +374,7 @@
   <div class="legend" role="note">
     <span class="lg"><span class="sw" style="background:#ffb84d"></span><b>Amber</b> — records &amp; personal bests</span>
     <span class="lg"><span class="sw" style="background:#33decf"></span><b>Cyan</b> — live detection: ROI, motion energy, armed</span>
-    <span class="lg"><span class="sw" style="background:#ff5265"></span><b>Red</b> — stop (destructive, semantic only)</span>
+    <span class="lg"><span class="sw" style="background:#ff5265"></span><b>Red</b> — destructive: stop, and delete (filled = the confirm, ghost = the way in)</span>
   </div>
 
   <div class="gallery">
@@ -685,7 +703,8 @@
 
           <div class="bigbtns" style="margin-top:auto">
             <button class="btn btn-ghost" style="padding:18px;font-size:1.1rem">
-              <svg class="ic" viewBox="0 0 24 24" style="width:20px;height:20px"><path d="M3 6h18M8 6V4h8v2M6 6l1 14h10l1-14"/></svg>
+              <!-- Struck-through mark, not a trash can: discarding keeps every byte — the lap stays in the file, the table and the export. -->
+              <svg class="ic" viewBox="0 0 24 24" style="width:20px;height:20px"><rect x="4" y="7" width="16" height="10" rx="3"/><path d="M2 12h20"/></svg>
               Discard last lap
             </button>
             <button class="btn btn-danger btn-stop">
@@ -744,16 +763,145 @@
             </table>
           </div>
           <p style="font-size:.76rem;color:var(--c-dim);text-align:center;margin:0;line-height:1.45">Lap 4 discarded after a crash — the best-3 window can't span it.</p>
+
+          <div class="danger">
+            <button class="btn btn-danger-ghost">
+              <svg class="ic" viewBox="0 0 24 24"><path d="M3 6h18M8 6V4h8v2M6 6l1 14h10l1-14"/></svg>
+              Delete session
+            </button>
+          </div>
         </div>
       </div></div>
       <div class="caption">
         <p class="eyebrow"><span class="num">07</span> Review</p>
         <h3>Lap table</h3>
-        <p>Header carries course, date, note, and both records. Each lap lists duration to <b>two decimals</b> and its time of day. The <b>best lap</b> (6) is amber; the <b>best-3 window</b> (5–7) is a bracketed amber band; the discarded lap (4) is struck through and, crucially, breaks the window so it can't be spanned.</p>
+        <p>Header carries course, date, note, and both records. Each lap lists duration to <b>two decimals</b> and its time of day. The <b>best lap</b> (6) is amber; the <b>best-3 window</b> (5–7) is a bracketed amber band; the discarded lap (4) is struck through and, crucially, breaks the window so it can't be spanned. <b>Delete session</b> sits last, under a rule, in danger-ghost — never beside the note's Save button.</p>
       </div>
     </div>
 
-    <!-- ============ 8. UNSUPPORTED BROWSER ============ -->
+    <!-- ============ 8. EDIT COURSE ============ -->
+    <div class="item">
+      <div class="phone"><div class="screen">
+        <div class="statusbar"><span>20:22</span><span class="sysicons"><span>LTE</span><span class="batt"></span></span></div>
+        <div class="body">
+          <div class="appbar">
+            <div class="title">
+              <button class="backbtn" aria-label="Back"><svg class="ic" viewBox="0 0 24 24"><path d="M15 6l-6 6 6 6"/></svg></button>
+              <h1>Edit course</h1>
+            </div>
+          </div>
+
+          <div class="stack" style="margin-top:6px">
+            <div class="field">
+              <span class="label">Name</span>
+              <div class="val">Basement 3-gate</div>
+            </div>
+
+            <div class="field">
+              <span class="label">Crossing direction</span>
+              <div class="seg">
+                <div class="opt sel"><span class="arw">→</span><span>Left to right</span><small>counts this way</small></div>
+                <div class="opt"><span class="arw">←</span><span>Right to left</span><small>&nbsp;</small></div>
+              </div>
+              <span class="hint">Which way through the gate counts as a lap. The other direction is ignored.</span>
+            </div>
+
+            <div class="field">
+              <span class="label">Minimum lap time</span>
+              <div class="stepper">
+                <button aria-label="Decrease">−</button>
+                <div class="n">3.0<small> s</small></div>
+                <button aria-label="Increase">+</button>
+              </div>
+              <span class="hint">Crossings closer together than this are treated as debounce noise.</span>
+            </div>
+          </div>
+
+          <div style="margin-top:auto">
+            <button class="btn btn-primary">Save</button>
+            <div class="danger">
+              <button class="btn btn-danger-ghost">
+                <svg class="ic" viewBox="0 0 24 24"><path d="M3 6h18M8 6V4h8v2M6 6l1 14h10l1-14"/></svg>
+                Delete course
+              </button>
+            </div>
+          </div>
+        </div>
+      </div></div>
+      <div class="caption">
+        <p class="eyebrow"><span class="num">08</span> Edit course</p>
+        <h3>Where deleting a course starts</h3>
+        <p>The same three fields as <b>New course</b>, seeded from the stored course, with <b>Save</b> as the CTA. Below it, separated by a rule, the danger section: <b>Delete course</b> in the quieter <b>danger-ghost</b> button with the trash glyph — loud enough to read as destruction, never the thing a thumb lands on. It only navigates; the confirmation is a screen of its own.</p>
+      </div>
+    </div>
+
+    <!-- ============ 9. DELETE COURSE ============ -->
+    <div class="item">
+      <div class="phone"><div class="screen">
+        <div class="statusbar"><span>20:23</span><span class="sysicons"><span>LTE</span><span class="batt"></span></span></div>
+        <div class="body">
+          <div class="appbar">
+            <div class="title">
+              <button class="backbtn" aria-label="Back"><svg class="ic" viewBox="0 0 24 24"><path d="M15 6l-6 6 6 6"/></svg></button>
+              <h1>Delete course</h1>
+            </div>
+          </div>
+
+          <div class="del">
+            <h2>Delete "Basement 3-gate"?</h2>
+            <p class="lead">This also deletes 4 sessions and 56 laps flown on this course. It cannot be undone.</p>
+
+            <p class="notice-warning">Not backed up — some of this was flown after your last export. An export file is the only way to get this back.</p>
+            <button class="btn btn-ghost">Export backup first</button>
+
+            <div class="cta">
+              <button class="btn btn-ghost">Cancel</button>
+              <button class="btn btn-danger">Delete course and 4 sessions</button>
+            </div>
+          </div>
+        </div>
+      </div></div>
+      <div class="caption">
+        <p class="eyebrow"><span class="num">09</span> Delete course</p>
+        <h3>State the blast radius</h3>
+        <p>A <b>screen, not a dialog</b> — routes are this app's navigation language, so Back cancels for free and the transition breaks the reflex-tap rhythm. The body names exactly what goes: <b>sessions and laps, counted</b>, never "0 sessions" when the count couldn't be read. The amber <b>Not backed up</b> block offers an export as an escape hatch, never a gate. <b>Cancel</b> sits under the reading thumb; the filled-red confirm says what it takes with it.</p>
+      </div>
+    </div>
+
+    <!-- ============ 10. DELETE SESSION ============ -->
+    <div class="item">
+      <div class="phone"><div class="screen">
+        <div class="statusbar"><span>20:28</span><span class="sysicons"><span>LTE</span><span class="batt"></span></span></div>
+        <div class="body">
+          <div class="appbar">
+            <div class="title">
+              <button class="backbtn" aria-label="Back"><svg class="ic" viewBox="0 0 24 24"><path d="M15 6l-6 6 6 6"/></svg></button>
+              <h1>Delete session</h1>
+            </div>
+          </div>
+
+          <div class="del">
+            <h2>Delete this session?</h2>
+            <p class="lead">2026-07-11 20:12 — 8 laps, best 12.84 s. It cannot be undone.</p>
+
+            <p class="notice-warning">Not backed up — some of this was flown after your last export. An export file is the only way to get this back.</p>
+            <button class="btn btn-ghost">Export backup first</button>
+
+            <div class="cta">
+              <button class="btn btn-ghost">Cancel</button>
+              <button class="btn btn-danger">Delete session</button>
+            </div>
+          </div>
+        </div>
+      </div></div>
+      <div class="caption">
+        <p class="eyebrow"><span class="num">10</span> Delete session</p>
+        <h3>Same shape, one file</h3>
+        <p>Reached from the danger section under the lap table (07). Identical confirm screen, sized to one session: date, <b>every lap it holds</b> — discarded ones included, they keep every byte — and its best. Cancel above Delete, and the same not-backed-up warning when this session was flown since the last export.</p>
+      </div>
+    </div>
+
+    <!-- ============ 11. UNSUPPORTED BROWSER ============ -->
     <div class="item">
       <div class="phone"><div class="screen">
         <div class="statusbar"><span>20:09</span><span class="sysicons"><span>LTE</span><span class="batt"></span></span></div>
@@ -791,7 +939,7 @@
         </div>
       </div></div>
       <div class="caption">
-        <p class="eyebrow"><span class="num">08</span> Edge state</p>
+        <p class="eyebrow"><span class="num">11</span> Edge state</p>
         <h3>Unsupported browser</h3>
         <p>A per-capability probe instead of a dead end: <b>WebGPU</b>, camera, OPFS, and Web Speech each report pass or fail, so the missing piece is obvious. Here WebGPU is unavailable; guidance points to a supported Chromium build.</p>
       </div>

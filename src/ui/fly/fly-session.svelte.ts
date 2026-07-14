@@ -8,8 +8,8 @@ import { SessionEngine } from '../../core/session/session-engine'
 import {
   createSessionPersister,
   type PersisterState,
+  type SessionWriter,
 } from '../../core/session/session-persister'
-import type { Storage } from '../../core/storage/storage'
 import { errorText } from '../diag/format'
 import { createCaptureSession } from '../shared/capture-session.svelte'
 import {
@@ -33,7 +33,11 @@ export interface FlySessionOptions {
   // file created at arm, rewritten per lap/discard/note edit, flushed on
   // stop. All persister calls are synchronous fire-and-forget — a slow or
   // failing write never delays lap timing or speech (plan 06 item 5).
-  storage: Storage
+  //
+  // A SessionWriter, not a Storage: the fly flow gets saveSession and nothing
+  // else. The courses.json members live behind CoursesRepo's critical section
+  // (repos.ts) and are not reachable from here — by type, not by convention.
+  storage: SessionWriter
   // The most recent session's detectionConfig snapshot for this course
   // (product.md prefill); absent → the shipped defaults.
   initialDetectionConfig?: SessionDetectionConfig

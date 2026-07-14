@@ -8,7 +8,7 @@
 
   let { report }: { report: CapabilityReport } = $props()
 
-  // Mockup screen 08 probe rows: short name + dim mono descriptor. The
+  // Mockup screen 11 probe rows: short name + dim mono descriptor. The
   // mockup's "WebGPU" row predates ADR 0009 — the detection capability is
   // WebCodecs capture now. CapabilityList (diag) keeps the full report labels;
   // this screen owns its own compact rendering.

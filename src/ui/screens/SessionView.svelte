@@ -143,8 +143,31 @@
         {/if}
       </div>
     </div>
+
+    <!-- Outside the columns, so it is the last thing on the page in both
+         layouts and never lands beside the note's Save button. The
+         confirmation is a screen of its own (plan 09 item 8) — this only
+         navigates. -->
+    <section class="danger">
+      {#if context.readOnly}
+        <button class="btn btn-danger-ghost" disabled>
+          {@render deleteLabel()}
+        </button>
+      {:else}
+        <a class="btn btn-danger-ghost" href={hashFor({ id: 'delete-session', sessionId })}>
+          {@render deleteLabel()}
+        </a>
+      {/if}
+    </section>
   {/if}
 </main>
+
+{#snippet deleteLabel()}
+  <svg class="ic" viewBox="0 0 24 24">
+    <path d="M3 6h18M8 6V4h8v2M6 6l1 14h10l1-14" />
+  </svg>
+  Delete session
+{/snippet}
 
 <style>
   .review-columns {
@@ -216,9 +239,25 @@
     line-height: 1.45;
   }
 
+  .danger {
+    margin-top: 2rem;
+    padding-top: 1.5rem;
+    border-top: 1px solid var(--c-line);
+  }
+
+  .danger a {
+    text-decoration: none;
+  }
+
   @media (min-width: 48rem) {
     main {
       max-width: 64rem;
+    }
+
+    /* Matches the header column's width: a full 64rem danger button would
+       shout louder than anything else on the page. */
+    .danger {
+      max-width: 24rem;
     }
 
     .review-columns {

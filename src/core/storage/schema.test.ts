@@ -148,6 +148,88 @@ describe('parseCoursesFile', () => {
   })
 })
 
+// The intent marker only works if it survives the round trip: parseSettings
+// builds a fresh object from known keys, so an unparsed key would be written to
+// disk and silently dropped on every read (plan 09 item 1).
+describe('parseCoursesFile — pendingCourseDeletions', () => {
+  function docWithPending(pending: unknown) {
+    const doc = validCoursesFileDoc()
+    asRecord(doc.settings).pendingCourseDeletions = pending
+    return doc
+  }
+
+  const validPending = {
+    courseId: '8f14e45f-ea11-4b2a-9c96-1a6f2e6f4a01',
+    courseName: 'Basement 3-gate',
+    sessionIds: ['4dd1c33a-2c11-4b5e-8e9d-52a6f0b6f102', 'a1b2c3d4-0000-4000-8000-000000000001'],
+  }
+
+  it('round-trips the marker', () => {
+    expect(parseCoursesFile(docWithPending([validPending])).settings).toEqual({
+      speechEnabled: true,
+      pendingCourseDeletions: [validPending],
+    })
+  })
+
+  it('round-trips several markers, and one with an empty work list', () => {
+    const emptyWorkList = { courseId: 'c2', courseName: 'Garage', sessionIds: [] }
+    expect(
+      parseCoursesFile(docWithPending([validPending, emptyWorkList])).settings
+        .pendingCourseDeletions,
+    ).toEqual([validPending, emptyWorkList])
+  })
+
+  it('leaves the key absent — not undefined — when nothing is pending', () => {
+    const settings = parseCoursesFile(validCoursesFileDoc()).settings
+    expect('pendingCourseDeletions' in settings).toBe(false)
+    expect(defaultAppSettings()).toEqual({ speechEnabled: true })
+    expect('pendingCourseDeletions' in defaultAppSettings()).toBe(false)
+  })
+
+  it('rejects a non-array value', () => {
+    expect(() => parseCoursesFile(docWithPending({}))).toThrow(
+      /\$\.settings\.pendingCourseDeletions: expected array/,
+    )
+  })
+
+  it('rejects a non-object entry', () => {
+    expect(() => parseCoursesFile(docWithPending(['c1']))).toThrow(
+      /\$\.settings\.pendingCourseDeletions\[0\]: expected object/,
+    )
+  })
+
+  it('rejects a missing or empty courseId', () => {
+    const { courseId, ...withoutCourseId } = validPending
+    void courseId
+    expect(() => parseCoursesFile(docWithPending([withoutCourseId]))).toThrow(
+      /\$\.settings\.pendingCourseDeletions\[0\]\.courseId: expected string/,
+    )
+    expect(() => parseCoursesFile(docWithPending([{ ...validPending, courseId: '' }]))).toThrow(
+      /\$\.settings\.pendingCourseDeletions\[0\]\.courseId: expected non-empty string/,
+    )
+  })
+
+  it('rejects a missing courseName', () => {
+    const { courseName, ...withoutCourseName } = validPending
+    void courseName
+    expect(() => parseCoursesFile(docWithPending([validPending, withoutCourseName]))).toThrow(
+      /\$\.settings\.pendingCourseDeletions\[1\]\.courseName/,
+    )
+  })
+
+  it('rejects a non-array sessionIds', () => {
+    expect(() =>
+      parseCoursesFile(docWithPending([{ ...validPending, sessionIds: 's1' }])),
+    ).toThrow(/\$\.settings\.pendingCourseDeletions\[0\]\.sessionIds: expected array/)
+  })
+
+  it('rejects a non-string sessionIds element', () => {
+    expect(() =>
+      parseCoursesFile(docWithPending([{ ...validPending, sessionIds: ['s1', 7] }])),
+    ).toThrow(/\$\.settings\.pendingCourseDeletions\[0\]\.sessionIds\[1\]: expected string, got number/)
+  })
+})
+
 describe('parseSessionFile', () => {
   it('accepts the storage.md example shape (flat, schemaVersion alongside)', () => {
     expect(parseSessionFile(validSessionFileDoc())).toEqual(validSessionFileDoc())

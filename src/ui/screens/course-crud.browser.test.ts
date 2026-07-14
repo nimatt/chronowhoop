@@ -31,10 +31,14 @@ function mountApp(storage: MemoryStorage) {
   })
 }
 
-function linkByText(label: string): HTMLAnchorElement {
-  const link = Array.from(container.querySelectorAll('a')).find(
+function maybeLinkByText(label: string): HTMLAnchorElement | undefined {
+  return Array.from(container.querySelectorAll('a')).find(
     (candidate) => candidate.textContent?.trim() === label,
   )
+}
+
+function linkByText(label: string): HTMLAnchorElement {
+  const link = maybeLinkByText(label)
   if (!link) throw new Error(`no link labelled ${JSON.stringify(label)}`)
   return link
 }
@@ -158,6 +162,42 @@ describe('course CRUD flow (App + MemoryStorage)', () => {
     // The edit persisted through the storage seam.
     const { courses } = await storage.loadCourses()
     expect(courses).toEqual([{ ...course, name: 'New name' }])
+  })
+
+  it('offers Delete course when editing, links it to the confirm route, and never on the new form', async () => {
+    const storage = new MemoryStorage()
+    await storage.saveCourses({
+      courses: [makeCourse({ id: 'c-1', name: 'Old name' })],
+      settings: { speechEnabled: true },
+    })
+    mountApp(storage)
+
+    location.hash = '#/course/c-1/edit'
+    // "Minimum lap time" only renders once the form is seeded from storage.
+    await waitForText('Minimum lap time')
+    expect(linkByText('Delete course').getAttribute('href')).toBe('#/course/c-1/delete')
+
+    location.hash = '#/course/new'
+    await waitForText('Create course')
+    expect(maybeLinkByText('Delete course')).toBeUndefined()
+    expect(text()).not.toContain('Delete course')
+  })
+
+  it('offers no delete link on the edit form in a read-only tab', async () => {
+    class ReadOnlyMemoryStorage extends MemoryStorage {
+      readonly readOnly = true
+    }
+    const storage = new ReadOnlyMemoryStorage()
+    await storage.saveCourses({
+      courses: [makeCourse({ id: 'c-1', name: 'Old name' })],
+      settings: { speechEnabled: true },
+    })
+    mountApp(storage)
+
+    location.hash = '#/course/c-1/edit'
+    await waitForText('Minimum lap time')
+    expect(maybeLinkByText('Delete course')).toBeUndefined()
+    expect(buttonByText('Delete course').disabled).toBe(true)
   })
 
   it('shows a not-found message for a course view on an unknown id', async () => {

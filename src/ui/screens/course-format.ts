@@ -1,6 +1,12 @@
 import type { CrossingDirection } from '../../core/detection/crossing-events'
 import type { IsoDateString } from '../../core/domain/types'
 
+// "1 session" / "12 sessions" — shared by Home's card meta and the delete
+// screens' blast-radius copy, which must agree down to the last character.
+export function plural(count: number, noun: string): string {
+  return `${String(count)} ${noun}${count === 1 ? '' : 's'}`
+}
+
 export function directionArrow(direction: CrossingDirection): string {
   return direction === 'ltr' ? '→' : '←'
 }

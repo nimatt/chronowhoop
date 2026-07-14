@@ -413,5 +413,8 @@ function storageAsInterface(storage: MemoryStorage): Storage {
     exportAll: () => storage.exportAll(),
     importAll: (envelope) => storage.importAll(envelope),
     persistenceStatus: () => storage.persistenceStatus(),
+    deleteSession: (id) => storage.deleteSession(id),
+    deleteCourse: (id) => storage.deleteCourse(id),
+    resumePendingDeletions: () => storage.resumePendingDeletions(),
   }
 }

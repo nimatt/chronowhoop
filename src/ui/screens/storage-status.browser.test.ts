@@ -8,6 +8,7 @@ import App from '../App.svelte'
 import type { CapabilityReport } from '../../core/capabilities/capabilities'
 import type { QuarantineEvent } from '../../core/storage/opfs-storage'
 import { MemoryStorage } from '../../core/storage/memory-storage'
+import { makeCourse, makeSession } from '../../core/storage/storage-contract'
 import { StorageError, type Storage } from '../../core/storage/storage'
 
 const passingReport: CapabilityReport = {
@@ -111,5 +112,64 @@ describe('storage status and failure UI (App + MemoryStorage variants)', () => {
 
     buttonByText('Dismiss').click()
     await vi.waitFor(() => expect(text()).not.toContain('A stored file was corrupt'))
+  })
+
+  // Startup resume (plan 09 item 10). Mounted on #/diag, the route the app
+  // happens to have restored: the notice belongs to App, not Home, precisely
+  // because a relaunch after a crashed delete may never land on Home.
+  it('finishes an interrupted deletion at startup and shows a dismissable notice', async () => {
+    const storage = new MemoryStorage()
+    await storage.saveCourses({
+      courses: [makeCourse({ id: 'c-1', name: 'Basement 3-gate' })],
+      settings: {
+        speechEnabled: true,
+        pendingCourseDeletions: [
+          { courseId: 'c-1', courseName: 'Basement 3-gate', sessionIds: ['s-1'] },
+        ],
+      },
+    })
+    await storage.saveSession(makeSession({ id: 's-1', courseId: 'c-1' }))
+    location.hash = '#/diag'
+    mountApp(() => storage)
+
+    await waitForText('Finished deleting "Basement 3-gate" — an earlier deletion was interrupted.')
+    const { courses, settings } = await storage.loadCourses()
+    expect(courses).toEqual([])
+    expect(settings.pendingCourseDeletions).toBeUndefined()
+    expect(await storage.listSessions()).toEqual([])
+
+    buttonByText('Dismiss').click()
+    await vi.waitFor(() => expect(text()).not.toContain('Finished deleting'))
+  })
+
+  // Flown since the interrupted delete: the marker's bounded work list no
+  // longer covers what is there, so the deletion is abandoned, not completed.
+  it('reports an abandoned deletion and leaves the course intact', async () => {
+    const storage = new MemoryStorage()
+    await storage.saveCourses({
+      courses: [makeCourse({ id: 'c-1', name: 'Basement 3-gate' })],
+      settings: {
+        speechEnabled: true,
+        pendingCourseDeletions: [
+          { courseId: 'c-1', courseName: 'Basement 3-gate', sessionIds: ['s-1'] },
+        ],
+      },
+    })
+    await storage.saveSession(makeSession({ id: 's-1', courseId: 'c-1' }))
+    await storage.saveSession(makeSession({ id: 's-flown-since', courseId: 'c-1' }))
+    mountApp(() => storage)
+
+    await waitForText(
+      'An interrupted deletion of "Basement 3-gate" was abandoned — you have flown on it since.',
+    )
+    const { courses, settings } = await storage.loadCourses()
+    expect(courses.map((course) => course.id)).toEqual(['c-1'])
+    expect(settings.pendingCourseDeletions).toBeUndefined()
+    expect((await storage.listSessions()).map((summary) => summary.id).sort()).toEqual([
+      's-1',
+      's-flown-since',
+    ])
+    // The course survives on Home, with both sessions.
+    await waitForText('Basement 3-gate')
   })
 })

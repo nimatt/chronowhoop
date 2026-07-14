@@ -13,12 +13,26 @@
 // into read-only, so a refresh race with a dying predecessor tab cannot
 // permanently strand a lone tab.
 //
+// Deletion (plan 09, ADR 0011) is byte-level: a session file is removed by
+// name with removeEntry and never read first, so a corrupt or
+// unsupported-version file can still be deleted; a course deletes through the
+// two-phase cascade shared with MemoryStorage (delete.ts). An in-memory,
+// instance-scoped resurrection guard makes a write that was already in flight
+// when a delete ran converge on "gone" — see deletedSessionIds,
+// condemnedCourseIds and deletedCourseIds. Condemning only ever REFUSES a
+// write; only a destruction that actually happened may remove a file.
+//
 // There is deliberately NO startup sweep (ADR 0010 amendment): our own writes
 // leave no artifacts (createWritable's `.crswap` staging files are
 // browser-managed, and deleting one could race another tab's in-flight write),
 // quarantine files are kept on purpose, and reads skip every non-`.json` name.
 
 import type { IsoDateString, Session } from '../domain/types'
+import {
+  deleteCourseFromStorage,
+  resumePendingDeletionsFromStorage,
+  settingsForExport,
+} from './delete'
 import { importIntoStorage } from './import'
 import {
   defaultAppSettings,
@@ -35,8 +49,10 @@ import {
   StorageError,
   summarizeSession,
   type CoursesData,
+  type DeleteCourseResult,
   type ImportResult,
   type PersistenceStatus,
+  type ResumeOutcome,
   type SessionSummary,
   type Storage,
 } from './storage'
@@ -46,6 +62,13 @@ export const COURSES_FILE = 'courses.json'
 export const SESSIONS_DIR = 'sessions'
 export const WRITER_LOCK_NAME = 'chronowhoop-storage'
 export const LOCK_RETRY_DELAY_MS = 1500
+// Attempts at removing a session file that a racing write re-created after its
+// delete (see removeResurrectedFile). More than one because the removal is the
+// last line of defence against a session file outliving its course, and OPFS
+// removals fail transiently (a handle still settling); few, because there is a
+// pilot waiting on this write and a persistent failure has to be reported, not
+// retried at.
+export const RESURRECTION_REMOVAL_ATTEMPTS = 3
 
 // Structural Web Locks surface (navigator.locks). With `ifAvailable: true` the
 // callback receives null when another holder exists; otherwise the lock stays
@@ -159,6 +182,42 @@ export class OpfsStorage implements Storage {
   private isReadOnly = false
   private persistRequested = false
   private rootPromise: Promise<OpfsDirectoryLike> | undefined
+  // THE RESURRECTION GUARD (plan 09 item 4, ADR 0011). In-memory and
+  // instance-scoped ON PURPOSE — these are NOT tombstones. Persisting them
+  // would make importIntoStorage silently drop sessions the user just handed
+  // it, and re-importing a pre-delete export is the only undo this product
+  // has. They exist solely to close the window in which a write already in
+  // flight when a delete ran re-creates the file it just removed.
+  private readonly deletedSessionIds = new Set<string>()
+  // Why COURSE sets as well as a session set: deleteCourse knows exactly the
+  // ids in its pre-cascade listSessions() snapshot, so the session set cannot
+  // know about a session that is not on disk yet. But the fly screen fires
+  // `void persister.flush()` (fly-session.svelte.ts) — fire-and-forget,
+  // outliving its component — and saveSession opens with { create: true }. A
+  // persister write for a session armed moments before the delete (first write
+  // still in flight, or in a write-failed retry) would land AFTER the commit
+  // and create a session file whose course is gone: exactly the ghost state the
+  // cascade exists to prevent. Guarding by courseId catches those unborn
+  // sessions too.
+  //
+  // TWO course sets, not one, because REFUSING and DESTROYING are not the same
+  // authority:
+  //
+  // condemnedCourseIds — a deletion is in flight. It may still fail at its very
+  //   first write (quota on the INTENT write ends the cascade having destroyed
+  //   nothing) or be abandoned by the resume's flown-since rule. A condemned
+  //   course may only REFUSE new session writes. If it could also destroy, a
+  //   delete that did nothing would remove the file of a write that raced it —
+  //   a straggling persister write, for a session the pilot is still flying.
+  // deletedCourseIds — the cascade's COMMIT write landed. The course is gone
+  //   from courses.json for good, so a session file of it that appears anyway
+  //   is the forbidden state and IS removed (removeResurrectedFile). This set
+  //   is only ever added to after the commit, and never released.
+  //
+  // Both sets refuse; only the second destroys. Both are cleared by importAll,
+  // which re-admits exactly what it restores.
+  private readonly condemnedCourseIds = new Set<string>()
+  private readonly deletedCourseIds = new Set<string>()
 
   constructor(options: OpfsStorageOptions = {}) {
     const storageManager = 'storage' in options ? options.storage : defaultOpfsStorage()
@@ -373,12 +432,14 @@ export class OpfsStorage implements Storage {
 
   // 'skip-unreadable' (listSessions, latestSessionForCourse): one unreadable
   // session file loses one session, never the listing (ADR 0010) — quarantined
-  // files, infrastructure read failures, and unsupported versions are all
-  // skipped; loadSession on the same id surfaces the failure directly.
+  // files, infrastructure read failures, unsupported versions, and files that
+  // vanish mid-scan are all skipped; loadSession on the same id surfaces the
+  // failure directly.
   // 'strict' (exportAll): an export that silently omitted sessions would be a
-  // lossy backup the user trusts — infrastructure failures and unsupported
-  // versions reject. Quarantined files are the only omissions: the read that
-  // quarantined them already moved them aside and fired onQuarantine.
+  // lossy backup the user trusts — infrastructure failures, unsupported
+  // versions, AND a listed name that reads back not-found all reject.
+  // Quarantined files are the only omissions: the read that quarantined them
+  // already moved them aside and fired onQuarantine.
   private async loadAllSessions(mode: 'skip-unreadable' | 'strict'): Promise<Session[]> {
     const dir = await this.sessionsDirectory({ create: false })
     if (!dir) return []
@@ -396,11 +457,28 @@ export class OpfsStorage implements Storage {
     }
     const sessions: Session[] = []
     for (const name of names) {
+      let result: ReadResult<SessionFile>
       try {
-        const result = await this.readDocument(dir, name, parseSessionFile)
-        if (result.status === 'ok') sessions.push(toSession(result.value))
+        result = await this.readDocument(dir, name, parseSessionFile)
       } catch (error) {
         if (mode === 'strict') throw toReadError(`reading ${name}`, error)
+        continue
+      }
+      if (result.status === 'ok') {
+        sessions.push(toSession(result.value))
+        continue
+      }
+      // The name WAS listed and then read back not-found: the file vanished
+      // between the listing and the read (a cascade removing it, another tab).
+      // readDocument reports that as a status rather than a throw, so strict
+      // mode would otherwise drop the session from the export in silence —
+      // handing the user a truncated backup and then stamping lastExportAt on
+      // it, right where "Export backup first" makes that backup the only undo.
+      if (mode === 'strict' && result.status === 'not-found') {
+        throw new StorageError(
+          'corrupt',
+          `reading ${name}: the file disappeared during the scan — refusing to export without it`,
+        )
       }
     }
     return sessions
@@ -459,8 +537,77 @@ export class OpfsStorage implements Storage {
     return toSession(result.value)
   }
 
+  private isRefused(session: Session): boolean {
+    return (
+      this.deletedSessionIds.has(session.id) ||
+      this.condemnedCourseIds.has(session.courseId) ||
+      this.deletedCourseIds.has(session.courseId)
+    )
+  }
+
+  // THE DESTRUCTIVE HALF OF THE GUARD, and deliberately NARROWER than
+  // isRefused: a session file may only be removed on behalf of a destruction
+  // that ACTUALLY HAPPENED — this exact session id was deleteSession'd, or this
+  // course's cascade reached its COMMIT. A merely CONDEMNED course is a
+  // deletion still in flight, which may fail at its first write and destroy
+  // nothing at all; compensating for it would let a delete that did nothing
+  // remove the file a racing persister write had just landed — the pilot's
+  // laps, erased by a deletion that never happened.
+  private wasDestroyed(session: Session): boolean {
+    return this.deletedSessionIds.has(session.id) || this.deletedCourseIds.has(session.courseId)
+  }
+
+  private assertWritable(session: Session): void {
+    if (!this.isRefused(session)) return
+    // 'not-found' rather than 'write-failed' on purpose: SessionPersister
+    // retries write-failed and nothing else, so a straggling tail write for a
+    // deleted session dies quietly here instead of retrying its way back onto
+    // disk (session-persister.ts).
+    throw new StorageError(
+      'not-found',
+      `session "${session.id}" was deleted — refusing to write it back`,
+    )
+  }
+
+  // The write we just made re-created a file a delete had already removed
+  // ({ create: true } does that), so THIS REMOVAL IS THE ONLY THING between the
+  // app and the state the cascade exists to forbid: a readable session file
+  // whose course is gone. Swallowing a failure here (the old
+  // `.catch(() => {})`) left that file on disk permanently — invisible, because
+  // no screen lists a session whose course is gone, and unattributable, because
+  // the only thing that knows it should be gone is this instance's in-memory
+  // guard, which dies with the page. It would then ride out in every future
+  // export as "Unknown course".
+  //
+  // So the failure is retried and then RAISED, as the write failure it is: the
+  // caller (SessionPersister) retries 'write-failed' once, that retry's
+  // pre-check rejects 'not-found', and the persister gives up — while the app's
+  // storage-error channel has said out loud that a write did not land.
+  // Deliberately NOT routed through onQuarantine: nothing here is corrupt and
+  // nothing was set aside, which is precisely what that notice claims.
+  private async removeResurrectedFile(dir: OpfsDirectoryLike, name: string): Promise<void> {
+    let lastError: unknown
+    for (let attempt = 0; attempt < RESURRECTION_REMOVAL_ATTEMPTS; attempt++) {
+      try {
+        await dir.removeEntry(name)
+        return
+      } catch (error) {
+        // Already gone (a concurrent delete beat us to it) is the outcome we
+        // wanted.
+        if (isNotFoundException(error)) return
+        lastError = error
+      }
+    }
+    throw new StorageError(
+      'write-failed',
+      `removing ${SESSIONS_DIR}/${name}: the session was deleted while this write was in flight and the re-created file could not be removed — it may now outlive its course: ${errorMessage(lastError)}`,
+      { cause: lastError },
+    )
+  }
+
   async saveSession(session: Session): Promise<void> {
     await this.guardWriter()
+    this.assertWritable(session)
     const name = sessionFileName(session.id)
     const file = { schemaVersion: SCHEMA_VERSION, ...session }
     assertValidDocument(() => parseSessionFile(file), `saving ${SESSIONS_DIR}/${name}`)
@@ -469,10 +616,89 @@ export class OpfsStorage implements Storage {
       const dir = await this.sessionsDirectory({ create: true })
       if (!dir) throw new Error(`${SESSIONS_DIR}/ could not be created`)
       await this.writeTextFile(dir, name, text)
+      // Checked AGAIN after the write, because the check above is passed by a
+      // write that was already inside writeTextFile when the destruction ran:
+      // the { create: true } handle then re-creates the file that was removed.
+      // wasDestroyed, NOT isRefused — a deletion that is merely in flight has
+      // destroyed nothing and gets no compensation here. What it cannot catch
+      // (a session that was never on disk, so no id names it) the cascade's
+      // post-commit sweep does, once the deletion is a fact (delete.ts).
+      if (this.wasDestroyed(session)) {
+        await this.removeResurrectedFile(dir, name)
+        this.assertWritable(session)
+      }
     } catch (error) {
+      // toWriteError returns a StorageError unchanged, so the 'not-found'
+      // above surfaces as 'not-found' and is not rewrapped as 'write-failed'.
       throw toWriteError(`saving ${SESSIONS_DIR}/${name}`, error)
     }
     this.requestPersistOnce()
+  }
+
+  async deleteSession(id: string): Promise<void> {
+    await this.guardWriter()
+    // Recorded BEFORE the I/O so a saveSession racing this removal loses: it
+    // either fails its pre-check, or compensates its own write afterwards.
+    this.deletedSessionIds.add(id)
+    const name = sessionFileName(id)
+    try {
+      const dir = await this.sessionsDirectory({ create: false })
+      if (!dir) return
+      // removeEntry, as quarantine() already uses — not FileSystemHandle.remove().
+      await dir.removeEntry(name)
+    } catch (error) {
+      // An unknown id RESOLVES: the file is gone, which is all deleteSession
+      // promises. Idempotence is what makes a double-tap and the retry after a
+      // partially-applied cascade safe.
+      if (isNotFoundException(error)) return
+      // A FAILED delete must UN-RECORD the id. The session still exists, and
+      // leaving it in the guard set would poison it for the life of this tab:
+      // every later saveSession would reject 'not-found', and the live
+      // persister — which retries 'write-failed' and nothing else — would
+      // silently stop saving laps for a session the user is still flying.
+      this.deletedSessionIds.delete(id)
+      throw toWriteError(`deleting ${SESSIONS_DIR}/${name}`, error)
+    }
+  }
+
+  // The course half of the guard. Driven by the shared cascade (delete.ts) so
+  // the resume — which ends in the same COMMIT — condemns, releases and commits
+  // exactly as deleteCourse does, instead of the two drifting apart. See the
+  // DeleteTarget doc comment for why refusing and destroying are separate
+  // authorities.
+  condemnCourse(id: string): void {
+    this.condemnedCourseIds.add(id)
+  }
+
+  // Release is the same un-record rule deleteSession has, for the same reason:
+  // a cascade that failed (or a resume that abandoned) leaves the course
+  // standing, and a course left condemned would make every session flown on it
+  // reject 'not-found' for the rest of the tab's life. Sessions the cascade DID
+  // remove stay guarded by deletedSessionIds, which deleteSession recorded one
+  // by one — releasing the course never re-admits them.
+  releaseCourse(id: string): void {
+    this.condemnedCourseIds.delete(id)
+  }
+
+  commitCourseDeletion(id: string): void {
+    this.deletedCourseIds.add(id)
+  }
+
+  async deleteCourse(id: string): Promise<DeleteCourseResult> {
+    // Fail fast, before the cascade's read-before-destroy scan: a read-only
+    // instance holds no writer lock and every write it attempts would reject.
+    await this.guardWriter()
+    return deleteCourseFromStorage(this, id)
+  }
+
+  // Never rejects (the contract): resumePendingDeletionsFromStorage swallows a
+  // failed entry and leaves its marker for the next launch.
+  resumePendingDeletions(): Promise<ResumeOutcome[]> {
+    return this.writerLockGranted.then((granted) =>
+      // A read-only instance holds no writer lock, so it can finish nothing —
+      // and must not try. The writer tab resumes; this one reports [].
+      granted ? resumePendingDeletionsFromStorage(this) : [],
+    )
   }
 
   async latestSessionForCourse(courseId: string): Promise<Session | undefined> {
@@ -487,10 +713,24 @@ export class OpfsStorage implements Storage {
   async exportAll(): Promise<ExportEnvelope> {
     const { courses, settings } = await this.loadCourses()
     const sessions = (await this.loadAllSessions('strict')).sort(compareSessionRecency)
-    return { schemaVersion: SCHEMA_VERSION, exportedAt: this.now(), courses, settings, sessions }
+    return {
+      schemaVersion: SCHEMA_VERSION,
+      exportedAt: this.now(),
+      courses,
+      settings: settingsForExport(settings),
+      sessions,
+    }
   }
 
+  // RE-ADMITS the ids it is about to write before delegating. The import is the
+  // undo: importing an export that still contains something deleted earlier in
+  // this tab must restore it, not abort mid-import on the guard's 'not-found'.
   importAll(envelope: ExportEnvelope): Promise<ImportResult> {
+    for (const course of envelope.courses) {
+      this.condemnedCourseIds.delete(course.id)
+      this.deletedCourseIds.delete(course.id)
+    }
+    for (const session of envelope.sessions) this.deletedSessionIds.delete(session.id)
     return importIntoStorage(this, envelope)
   }
 
